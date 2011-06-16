@@ -7,7 +7,8 @@ _re_include = re.compile(r'''<esi:include'''
                              r'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
                              r'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
                              r'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
-                         r'''))+\s*/?>''') # match whitespace at the end and the end tag
+                             r'''|(?P<other>[^\s]+)?''' # or find something eles
+                         r'''))+\s*/>''') # match whitespace at the end and the end tag
 
 def get_url(url, chase_redirect=False, force_ssl=False):
     if chase_redirect or force_ssl:
@@ -23,19 +24,28 @@ def get_url(url, chase_redirect=False, force_ssl=False):
         raise Exception(resp.status)
     return resp.read()
 
-def process(body):
+class InvalidESIMarkup(Exception):
+    pass
+
+def process_include(body):
     index = 0
     new = []
-    matches =  re_img.finditer(body)
+    matches = _re_include.finditer(body)
     for match in matches:
         # add section before current match to new body
         new.append(body[index:match.start()])
+        if match.group('other') or \
+           not match.group('src'):
+            raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
+        # get content to insert
+        new_content = get_url(match.groups('src'))
+        new.append(new_content)
+        # update index
         index = match.end()
-        # for now just append the match
-        new.append(body[match.start():match.end()])
     if not index:
         return None
-    return body
+    new.append(body[index:])
+    return ''.join(new)
 
 
 class MiddleWare(object):
