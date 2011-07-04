@@ -4,6 +4,10 @@ from unittest import TestCase
 import webob
 from mock import patch, Mock
 
+all_tests = False
+if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
+    all_tests = True
+
 patch_get_url = patch('wesgi._get_url', mocksignature=True)
 
 class TestProcessInclude(TestCase):
@@ -188,8 +192,22 @@ class TestMiddleWare(TestCase):
         self.assertEquals(get_url.call_args, (('https', 'www.example.com', None, ''), {}))
         self.assertEquals(''.join(response), 'before<div>example</div>after') 
 
+if all_tests:
+    class TestGetURL(TestCase):
+        # test not run by default as it requires network connectivity
+
+        def test_http(self):
+            from wesgi import _get_url
+            result = _get_url('http', 'www.google.es', None, '/')        
+            self.assertTrue("google" in result.lower())
+
+        def test_https(self):
+            from wesgi import _get_url
+            result = _get_url('https', 'encrypted.google.com', None, '/')        
+            self.assertTrue("google" in result.lower())
+
 def load_tests(loader, standard_tests, pattern):
-    if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
+    if all_tests:
         # run tests in our README.txt
         import doctest
         this_dir = os.path.dirname(__file__)

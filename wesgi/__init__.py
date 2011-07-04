@@ -76,7 +76,6 @@ _re_include = re.compile(r'''<esi:include'''
                          r'''))+\s*/>''') # match whitespace at the end and the end tag
 
 def _get_url(scheme, hostname, port, path):
-    # XXX this needs testing
     if scheme == 'http':
         conn = httplib.HTTPConnection(hostname, port)
     elif scheme == 'https':
@@ -85,7 +84,7 @@ def _get_url(scheme, hostname, port, path):
         raise NotImplementedError
     conn.request("GET", path)
     resp = conn.getresponse()
-    if resp != '200':
+    if resp.status != 200:
         raise Exception(resp.status)
     return resp.read()
 
