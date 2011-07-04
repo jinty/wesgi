@@ -1,6 +1,8 @@
 Misc
 ----
 
+    * License
+    * setup.py metadata
     * Capability token? (http://www.w3.org/TR/esi-lang)
 
 Correctness
