@@ -2,6 +2,8 @@ import re
 import httplib
 from urlparse import urlsplit, urlunsplit
 
+import webob
+
 _re_include = re.compile(r'''<esi:include'''
                          r'''(?:\s+(?:''' # whitespace at start of tag
                              r'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
@@ -38,7 +40,7 @@ def process_include(body):
            not match.group('src'):
             raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
         # get content to insert
-        new_content = get_url(match.groups('src'))
+        new_content = get_url(match.group('src'))
         new.append(new_content)
         # update index
         index = match.end()
@@ -54,10 +56,10 @@ class MiddleWare(object):
         self.app = app
 
     def __call__(self, environ, start_response):
-        req = Request(environ)
+        req = webob.Request(environ)
         resp = req.get_response(self.app)
         if resp.content_type == 'text/html' and resp.status_int == 200:
-            new_body = process(resp.body)
+            new_body = process_include(resp.body)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)

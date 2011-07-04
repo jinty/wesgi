@@ -1,5 +1,7 @@
 from unittest import TestCase
-from mock import patch
+
+import webob
+from mock import patch, Mock
 
 patch_get_url = patch('wesgi.get_url', mocksignature=True)
 
@@ -25,6 +27,7 @@ class TestProcessInclude(TestCase):
         data = process_include('before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
+        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
 
     @patch_get_url
     def test_invalid(self, get_url):
@@ -32,3 +35,29 @@ class TestProcessInclude(TestCase):
         self.assertRaises(InvalidESIMarkup, process_include, 'before<esi:include krud src="http://www.example.com"/>after')
         self.assertRaises(InvalidESIMarkup, process_include, 'before<esi:include krud="krud" src="http://www.example.com"/>after')
         self.assertFalse(get_url.called)
+
+class TestMiddleWare(TestCase):
+
+    def _one(self, *arg, **kw):
+        from wesgi import MiddleWare
+        return MiddleWare(*arg, **kw)
+
+    def _make_app(self, body, content_type='text/html', status=200):
+        def _app(environ, start_response):
+            response = webob.Response(body, content_type=content_type)
+            response.status = status
+            return response(environ, start_response)
+        return _app
+
+    @patch_get_url
+    def test_process(self, get_url):
+        get_url.return_value = '<div>example</div>'
+        mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
+
+        start_response = Mock()
+        request = webob.Request.blank("")
+        response = mw(request.environ, start_response)
+
+        self.assertEquals(get_url.call_count, 1)
+        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
+        self.assertEquals(''.join(response), 'before<div>example</div>after') 
