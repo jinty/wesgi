@@ -39,7 +39,21 @@ def process_include(body):
         if match.group('other') or not match.group('src'):
             raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
         # get content to insert
-        new_content = get_url(match.group('src'))
+        try:
+            new_content = get_url(match.group('src'))
+        except:
+            if match.group('alt'):
+                try:
+                    new_content = get_url(match.group('alt'))
+                except:
+                    if match.group('onerror') == 'continue':
+                        new_content = ''
+                    else:
+                        raise
+            elif match.group('onerror') == 'continue':
+                new_content = ''
+            else:
+                raise
         new.append(new_content)
         # update index
         index = match.end()
