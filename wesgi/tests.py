@@ -60,12 +60,21 @@ class TestProcessInclude(TestCase):
         data = _process_include('level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy())
         self.assertEquals(data, 'level-1-2-3-4-5-last-after')
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, '/4'), {}))
+        # Even with the akamai policy, if we're not in debug mode, no error is raised
+        counter.extend(range(10))
+        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy(), debug=False)
+        self.assertEquals(data, 'level-1-2-3-4-5-6-7-8-9-10-11-last-after')
 
     @patch_get_url
     def test_invalid(self, get_url):
         from wesgi import _process_include, InvalidESIMarkup
-        self.assertRaises(InvalidESIMarkup, _process_include, 'before<esi:include krud src="http://www.example.com"/>after')
-        self.assertRaises(InvalidESIMarkup, _process_include, 'before<esi:include krud="krud" src="http://www.example.com"/>after')
+        invalid1 = 'before<esi:include krud src="http://www.example.com"/>after'
+        invalid2 = 'before<esi:include krud="krud" src="http://www.example.com"/>after'
+        self.assertRaises(InvalidESIMarkup, _process_include, invalid1)
+        self.assertRaises(InvalidESIMarkup, _process_include, invalid2)
+        # if debug is False, these errors are not raised
+        self.assertEquals(_process_include(invalid1, debug=False), 'beforeafter')
+        self.assertEquals(_process_include(invalid2, debug=False), 'beforeafter')
         self.assertFalse(get_url.called)
 
     @patch_get_url
@@ -83,6 +92,9 @@ class TestProcessInclude(TestCase):
         self.assertRaises(Oops, _process_include, 'before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
+        # it is still raised if we turn off debug mode (it's specified in the ESI spec)
+        get_url.side_effect = side_effect
+        self.assertRaises(Oops, _process_include, 'before<esi:include src="http://www.example.com"/>after', debug=False)
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect
@@ -117,6 +129,9 @@ class TestProcessInclude(TestCase):
         self.assertRaises(OopsAlt, _process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
+        # it is still raised if we turn off debug mode (it's specified in the ESI spec)
+        get_url.side_effect = side_effect
+        self.assertRaises(OopsAlt, _process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after', debug=False)
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect

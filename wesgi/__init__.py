@@ -23,7 +23,8 @@ class AkamaiPolicy(Policy):
 
 class MiddleWare(object):
 
-    def __init__(self, app, policy='default'):
+    def __init__(self, app, policy='default', debug=True):
+        self.debug = debug
         self.app = app
         if isinstance(policy, basestring):
             policy = _POLICIES[policy]
@@ -36,7 +37,7 @@ class MiddleWare(object):
             require_ssl = False
             if environ['wsgi.url_scheme'] == 'https':
                 require_ssl = True
-            new_body = _process_include(resp.body, policy=self.policy, require_ssl=require_ssl)
+            new_body = _process_include(resp.body, policy=self.policy, require_ssl=require_ssl, debug=self.debug)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)
@@ -93,8 +94,8 @@ def _include_url(orig_url, require_ssl):
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
     return _get_url(url.scheme, url.hostname, url.port, path)
 
-def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=None):
-    if policy.max_nested_includes is not None and level > policy.max_nested_includes:
+def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=None, debug=True):
+    if debug and policy.max_nested_includes is not None and level > policy.max_nested_includes:
         raise RecursionError('Too many nested includes', level, body)
     index = 0
     new = []
@@ -103,7 +104,11 @@ def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=Non
         # add section before current match to new body
         new.append(body[index:match.start()])
         if match.group('other') or not match.group('src'):
-            raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
+            if debug:
+                raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
+            # silently ignore this match
+            index = match.end()
+            continue
         # get content to insert
         try:
             new_content = _include_url(match.group('src'), require_ssl=require_ssl)
@@ -122,7 +127,7 @@ def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=Non
                 raise
         if new_content:
             # recurse to process any includes in the new content
-            p = _process_include(new_content, policy=policy, level=level + 1)
+            p = _process_include(new_content, policy=policy, debug=debug, level=level + 1)
             if p is not None:
                 new_content = p
         new.append(new_content)
