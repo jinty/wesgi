@@ -79,6 +79,8 @@ def _get_url(scheme, hostname, port, path):
     # XXX this needs testing
     if scheme == 'http':
         conn = httplib.HTTPConnection(hostname, port)
+    elif scheme == 'https':
+        conn = httplib.HTTPSConnection(hostname, port)
     else:
         raise NotImplementedError
     conn.request("GET", path)
