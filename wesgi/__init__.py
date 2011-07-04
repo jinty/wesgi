@@ -32,7 +32,7 @@ def _include_url(url):
     path = urlunsplit(('', '', url[2], url[3], url[4]))
     return _get_url(url.scheme, url.hostname, url.port, path)
 
-def process_include(body):
+def _process_include(body):
     index = 0
     new = []
     matches = _re_include.finditer(body)
@@ -75,7 +75,7 @@ class MiddleWare(object):
         req = webob.Request(environ)
         resp = req.get_response(self.app)
         if resp.content_type == 'text/html' and resp.status_int == 200:
-            new_body = process_include(resp.body)
+            new_body = _process_include(resp.body)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)

@@ -9,37 +9,37 @@ class TestProcessInclude(TestCase):
 
     @patch_get_url
     def test_return_none_if_no_match(self, get_url):
-        from wesgi import process_include
-        data = process_include('')
+        from wesgi import _process_include
+        data = _process_include('')
         self.assertEquals(data, None) 
         self.assertFalse(get_url.called)
-        data = process_include('something')
+        data = _process_include('something')
         self.assertEquals(data, None) 
         self.assertFalse(get_url.called)
-        data = process_include('<html><head></head><body><h1>HI</h1><esi:not_an_include whatever="bobo"/></body></html>')
+        data = _process_include('<html><head></head><body><h1>HI</h1><esi:not_an_include whatever="bobo"/></body></html>')
         self.assertEquals(data, None) 
         self.assertFalse(get_url.called)
 
     @patch_get_url
     def test_match(self, get_url):
         get_url.return_value = '<div>example</div>'
-        from wesgi import process_include
-        data = process_include('before<esi:include src="http://www.example.com"/>after')
+        from wesgi import _process_include
+        data = _process_include('before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # onerror="continue" has no effect
         get_url.reset_mock()
-        data = process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
+        data = _process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
 
     @patch_get_url
     def test_invalid(self, get_url):
-        from wesgi import process_include, InvalidESIMarkup
-        self.assertRaises(InvalidESIMarkup, process_include, 'before<esi:include krud src="http://www.example.com"/>after')
-        self.assertRaises(InvalidESIMarkup, process_include, 'before<esi:include krud="krud" src="http://www.example.com"/>after')
+        from wesgi import _process_include, InvalidESIMarkup
+        self.assertRaises(InvalidESIMarkup, _process_include, 'before<esi:include krud src="http://www.example.com"/>after')
+        self.assertRaises(InvalidESIMarkup, _process_include, 'before<esi:include krud="krud" src="http://www.example.com"/>after')
         self.assertFalse(get_url.called)
 
     @patch_get_url
@@ -52,29 +52,29 @@ class TestProcessInclude(TestCase):
             get_url.side_effect = second_call
             raise Oops('oops')
         get_url.side_effect = side_effect
-        from wesgi import process_include
+        from wesgi import _process_include
         # without src we get our exception
-        self.assertRaises(Oops, process_include, 'before<esi:include src="http://www.example.com"/>after')
+        self.assertRaises(Oops, _process_include, 'before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect
-        data = process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
+        data = _process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'beforeafter') 
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # if we add a alt we get back the info from alt
         get_url.reset_mock()
         get_url.side_effect = side_effect
-        data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
+        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
         self.assertEquals(data, 'before<div>example alt</div>after') 
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
         # onerror = "continue" has no effect if there is only one error and alt is specified
         get_url.reset_mock()
         get_url.side_effect = side_effect
-        data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
+        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'before<div>example alt</div>after') 
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
@@ -88,13 +88,13 @@ class TestProcessInclude(TestCase):
             raise Oops('oops')
         get_url.reset_mock()
         get_url.side_effect = side_effect
-        self.assertRaises(OopsAlt, process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
+        self.assertRaises(OopsAlt, _process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect
-        data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
+        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'beforeafter') 
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
