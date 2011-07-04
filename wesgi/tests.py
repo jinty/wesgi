@@ -34,6 +34,32 @@ class TestProcessInclude(TestCase):
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
+    
+    @patch_get_url
+    def test_recursive(self, get_url):
+        counter = range(10)
+        def side_effect(*args):
+            if not counter:
+                return '-last'
+            count = counter.pop(0)
+            fragment = count + 1 # the nth fragment that we are including
+            count += 2 # count starts at 0, but first time we include is level 2
+            return '-%s<esi:include src="http://www.example.com/%s"/>' % (count, fragment)
+        get_url.side_effect = side_effect
+        from wesgi import _process_include, RecursionError, AkamaiPolicy
+        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after')
+        self.assertEquals(data, 'level-1-2-3-4-5-6-7-8-9-10-11-last-after')
+        self.assertEquals(get_url.call_count, 11)
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, '/10'), {}))
+        # Akamai FAQ http://www.akamai.com/dl/technical_publications/esi_faq.pdf
+        # claims that they support 5 levels of nested includes. Ours should do the same
+        # when using the akami policy
+        counter.extend(range(5))
+        self.assertRaises(RecursionError, _process_include, 'level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy())
+        counter.extend(range(4))
+        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy())
+        self.assertEquals(data, 'level-1-2-3-4-5-last-after')
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, '/4'), {}))
 
     @patch_get_url
     def test_invalid(self, get_url):
