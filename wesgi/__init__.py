@@ -33,7 +33,10 @@ class MiddleWare(object):
         req = webob.Request(environ)
         resp = req.get_response(self.app)
         if resp.content_type == 'text/html' and resp.status_int == 200:
-            new_body = _process_include(resp.body, policy=self.policy)
+            require_ssl = False
+            if environ['wsgi.url_scheme'] == 'https':
+                require_ssl = True
+            new_body = _process_include(resp.body, policy=self.policy, require_ssl=require_ssl)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)
@@ -52,7 +55,9 @@ class RecursionError(Exception):
         self.msg = msg
         self.body = body
         self.level = level
-        
+
+class IncludeError(Exception):
+    pass
 
 #
 # The internal bits to do the work
@@ -81,12 +86,14 @@ def _get_url(scheme, hostname, port, path):
         raise Exception(resp.status)
     return resp.read()
 
-def _include_url(url):
-    url = urlsplit(url)
+def _include_url(orig_url, require_ssl):
+    url = urlsplit(orig_url)
     path = urlunsplit(('', '', url[2], url[3], url[4]))
+    if require_ssl and url.scheme != 'https':
+        raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
     return _get_url(url.scheme, url.hostname, url.port, path)
 
-def _process_include(body, policy=_POLICIES['default'], level=0):
+def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=None):
     if policy.max_nested_includes is not None and level > policy.max_nested_includes:
         raise RecursionError('Too many nested includes', level, body)
     index = 0
@@ -99,11 +106,11 @@ def _process_include(body, policy=_POLICIES['default'], level=0):
             raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
         # get content to insert
         try:
-            new_content = _include_url(match.group('src'))
+            new_content = _include_url(match.group('src'), require_ssl=require_ssl)
         except:
             if match.group('alt'):
                 try:
-                    new_content = _include_url(match.group('alt'))
+                    new_content = _include_url(match.group('alt'), require_ssl=require_ssl)
                 except:
                     if match.group('onerror') == 'continue':
                         new_content = ''

@@ -151,3 +151,23 @@ class TestMiddleWare(TestCase):
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         self.assertEquals(''.join(response), 'before<div>example</div>after') 
+
+    @patch_get_url
+    def test_process_ssl(self, get_url):
+        from wesgi import IncludeError
+        get_url.return_value = '<div>example</div>'
+        mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
+
+        # trying to include an http: url from an https page raises an error
+        start_response = Mock()
+        request = webob.Request.blank("")
+        request.environ['wsgi.url_scheme'] = 'https'
+        response = self.assertRaises(IncludeError, mw, request.environ, start_response)
+        self.assertEquals(get_url.call_count, 0)
+
+        # https urls do work
+        mw = self._one(self._make_app('before<esi:include src="https://www.example.com"/>after', content_type='text/html'))
+        response = mw(request.environ, start_response)
+        self.assertEquals(get_url.call_count, 1)
+        self.assertEquals(get_url.call_args, (('https', 'www.example.com', None, ''), {}))
+        self.assertEquals(''.join(response), 'before<div>example</div>after') 
