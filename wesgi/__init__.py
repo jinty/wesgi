@@ -12,14 +12,12 @@ _re_include = re.compile(r'''<esi:include'''
                              r'''|(?P<other>[^\s]+)?''' # or find something eles
                          r'''))+\s*/>''') # match whitespace at the end and the end tag
 
-def get_url(url, chase_redirect=False, force_ssl=False):
-    if chase_redirect or force_ssl:
+def _get_url(scheme, hostname, port, path):
+    # XXX this needs testing
+    if scheme == 'http':
+        conn = httplib.HTTPConnection(hostname, port)
+    else:
         raise NotImplementedError
-    url = urlsplit(url)
-    if url.scheme != 'http':
-        raise NotImplementedError
-    path = urlunsplit(('', '', url[2], url[3], url[4]))
-    conn = httplib.HTTPConnection(url.hostname, url.port)
     conn.request("GET", path)
     resp = conn.getresponse()
     if resp != '200':
@@ -28,6 +26,11 @@ def get_url(url, chase_redirect=False, force_ssl=False):
 
 class InvalidESIMarkup(Exception):
     pass
+
+def _include_url(url):
+    url = urlsplit(url)
+    path = urlunsplit(('', '', url[2], url[3], url[4]))
+    return _get_url(url.scheme, url.hostname, url.port, path)
 
 def process_include(body):
     index = 0
@@ -40,11 +43,11 @@ def process_include(body):
             raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
         # get content to insert
         try:
-            new_content = get_url(match.group('src'))
+            new_content = _include_url(match.group('src'))
         except:
             if match.group('alt'):
                 try:
-                    new_content = get_url(match.group('alt'))
+                    new_content = _include_url(match.group('alt'))
                 except:
                     if match.group('onerror') == 'continue':
                         new_content = ''

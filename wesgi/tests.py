@@ -3,7 +3,7 @@ from unittest import TestCase
 import webob
 from mock import patch, Mock
 
-patch_get_url = patch('wesgi.get_url', mocksignature=True)
+patch_get_url = patch('wesgi._get_url', mocksignature=True)
 
 class TestProcessInclude(TestCase):
 
@@ -27,13 +27,13 @@ class TestProcessInclude(TestCase):
         data = process_include('before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # onerror="continue" has no effect
         get_url.reset_mock()
         data = process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
         self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
 
     @patch_get_url
     def test_invalid(self, get_url):
@@ -56,27 +56,28 @@ class TestProcessInclude(TestCase):
         # without src we get our exception
         self.assertRaises(Oops, process_include, 'before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect
         data = process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'beforeafter') 
-        self.assertEquals(get_url.call_args_list, [(('http://www.example.com', False, False), {})])
+        self.assertEquals(get_url.call_count, 1)
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         # if we add a alt we get back the info from alt
         get_url.reset_mock()
         get_url.side_effect = side_effect
         data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
         self.assertEquals(data, 'before<div>example alt</div>after') 
-        self.assertEquals(get_url.call_args_list, [(('http://www.example.com', False, False), {}),
-                                                   (('http://alt.example.com', False, False), {})])
+        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
+                                                   (('http', 'alt.example.com', None, ''), {})])
         # onerror = "continue" has no effect if there is only one error and alt is specified
         get_url.reset_mock()
         get_url.side_effect = side_effect
         data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'before<div>example alt</div>after') 
-        self.assertEquals(get_url.call_args_list, [(('http://www.example.com', False, False), {}),
-                                                   (('http://alt.example.com', False, False), {})])
+        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
+                                                   (('http', 'alt.example.com', None, ''), {})])
         # If both calls to get_url fail, the second exception is raised
         class OopsAlt(Exception):
             pass
@@ -88,15 +89,15 @@ class TestProcessInclude(TestCase):
         get_url.reset_mock()
         get_url.side_effect = side_effect
         self.assertRaises(OopsAlt, process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
-        self.assertEquals(get_url.call_args_list, [(('http://www.example.com', False, False), {}),
-                                                   (('http://alt.example.com', False, False), {})])
+        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
+                                                   (('http', 'alt.example.com', None, ''), {})])
         # unless onerror="continue", in which case the include is silently deleted
         get_url.reset_mock()
         get_url.side_effect = side_effect
         data = process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
         self.assertEquals(data, 'beforeafter') 
-        self.assertEquals(get_url.call_args_list, [(('http://www.example.com', False, False), {}),
-                                                   (('http://alt.example.com', False, False), {})])
+        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
+                                                   (('http', 'alt.example.com', None, ''), {})])
 
 
 class TestMiddleWare(TestCase):
@@ -122,5 +123,5 @@ class TestMiddleWare(TestCase):
         response = mw(request.environ, start_response)
 
         self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http://www.example.com', False, False), {}))
+        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
         self.assertEquals(''.join(response), 'before<div>example</div>after') 
