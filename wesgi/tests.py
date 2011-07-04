@@ -1,3 +1,4 @@
+import os
 from unittest import TestCase
 
 import webob
@@ -186,3 +187,13 @@ class TestMiddleWare(TestCase):
         self.assertEquals(get_url.call_count, 1)
         self.assertEquals(get_url.call_args, (('https', 'www.example.com', None, ''), {}))
         self.assertEquals(''.join(response), 'before<div>example</div>after') 
+
+def load_tests(loader, standard_tests, pattern):
+    if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
+        # run tests in our README.txt
+        import doctest
+        this_dir = os.path.dirname(__file__)
+        readme = doctest.DocFileTest(os.path.join(this_dir, '..', 'README.txt'),
+                                     module_relative=False)
+        standard_tests.addTest(readme)
+    return standard_tests

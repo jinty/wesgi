@@ -65,7 +65,7 @@ class IncludeError(Exception):
 #
 
 _POLICIES = {'default': Policy(),
-             'akami': AkamaiPolicy()}
+             'akamai': AkamaiPolicy()}
 
 _re_include = re.compile(r'''<esi:include'''
                          r'''(?:\s+(?:''' # whitespace at start of tag

@@ -1,0 +1,29 @@
+Misc
+----
+
+    * Capability token? (http://www.w3.org/TR/esi-lang)
+
+Correctness
+-----------
+
+    * Everything except esi:include is unimplemented.
+    * Add more policies
+    * ignore things like:
+        <!--esi  
+            <p><esi:vars>Hello, $(HTTP_COOKIE{name})!</esi:vars></p>
+        -->
+
+Production Ready
+----------------
+
+To make the code production ready we need to:
+
+    * Implement fragment caching.
+        - Cache plugin system
+        - Based on Cache-Control headers
+        - Create some plugins: Disk, memcache, memory?
+    * HTTP connection management:
+        - Cache connections to backend servers
+        - Limit number of connections in a sane way
+
+Note: "production" ready is relative, see README.txt 
