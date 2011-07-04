@@ -36,8 +36,7 @@ def process_include(body):
     for match in matches:
         # add section before current match to new body
         new.append(body[index:match.start()])
-        if match.group('other') or \
-           not match.group('src'):
+        if match.group('other') or not match.group('src'):
             raise InvalidESIMarkup("Invalid ESI markup: %s" % body[match.start():match.end()])
         # get content to insert
         new_content = get_url(match.group('src'))
