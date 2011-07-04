@@ -12,6 +12,7 @@ __all__ = ['Policy', 'AkamaiPolicy', 'MiddleWare', 'InvalidESIMarkup', 'Recursio
 
 class Policy(object):
     max_nested_includes = None
+    chase_redirect = False
 
 class AkamaiPolicy(Policy):
     """Configure the middleware to behave like akamai"""
@@ -75,6 +76,14 @@ _re_include = re.compile(r'''<esi:include'''
                              r'''|(?P<other>[^\s]+)?''' # or find something eles
                          r'''))+\s*/>''') # match whitespace at the end and the end tag
 
+class _HTTPError(Exception):
+
+    def __init__(self, url, status):
+        self.status = status
+        message = 'Url returned %s: %s' % (status, url)
+        super(_HTTPError, self).__init__(message)
+
+
 def _get_url(scheme, hostname, port, path):
     if scheme == 'http':
         conn = httplib.HTTPConnection(hostname, port)
@@ -83,17 +92,21 @@ def _get_url(scheme, hostname, port, path):
     else:
         raise NotImplementedError
     conn.request("GET", path)
-    resp = conn.getresponse()
-    if resp.status != 200:
-        raise Exception(resp.status)
-    return resp.read()
+    return conn.getresponse()
 
-def _include_url(orig_url, require_ssl):
+def _include_url(orig_url, require_ssl, chase_redirect):
     url = urlsplit(orig_url)
     path = urlunsplit(('', '', url[2], url[3], url[4]))
     if require_ssl and url.scheme != 'https':
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
-    return _get_url(url.scheme, url.hostname, url.port, path)
+    resp = _get_url(url.scheme, url.hostname, url.port, path)
+    if resp.status == 200:
+        return resp.read()
+    elif chase_redirect and resp.status in (301, 302):
+        resp.read() # finish response
+        return _include_url(resp.getheader('Location'), require_ssl, chase_redirect)
+    resp.read()
+    raise _HTTPError(orig_url, resp.status)
 
 def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=None, debug=True):
     if debug and policy.max_nested_includes is not None and level > policy.max_nested_includes:
@@ -112,11 +125,11 @@ def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=Non
             continue
         # get content to insert
         try:
-            new_content = _include_url(match.group('src'), require_ssl=require_ssl)
+            new_content = _include_url(match.group('src'), require_ssl=require_ssl, chase_redirect=policy.chase_redirect)
         except:
             if match.group('alt'):
                 try:
-                    new_content = _include_url(match.group('alt'), require_ssl=require_ssl)
+                    new_content = _include_url(match.group('alt'), require_ssl=require_ssl, chase_redirect=policy.chase_redirect)
                 except:
                     if match.group('onerror') == 'continue':
                         new_content = ''

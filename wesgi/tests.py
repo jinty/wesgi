@@ -10,6 +10,16 @@ if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
 
 patch_get_url = patch('wesgi._get_url', mocksignature=True)
 
+def MockResponse(body='', status=200, headers=None):
+    import httplib
+    MockResponse = Mock(spec=httplib.HTTPResponse)
+    MockResponse.read.return_value = body
+    MockResponse.status = status
+    if headers is None:
+        headers = {}
+    MockResponse.getheader.side_effect = headers.get
+    return MockResponse
+
 class TestProcessInclude(TestCase):
 
     @patch_get_url
@@ -27,7 +37,7 @@ class TestProcessInclude(TestCase):
 
     @patch_get_url
     def test_match(self, get_url):
-        get_url.return_value = '<div>example</div>'
+        get_url.return_value = MockResponse('<div>example</div>')
         from wesgi import _process_include
         data = _process_include('before<esi:include src="http://www.example.com"/>after')
         self.assertEquals(data, 'before<div>example</div>after') 
@@ -41,15 +51,37 @@ class TestProcessInclude(TestCase):
         self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
     
     @patch_get_url
+    def test_chase_redirect(self, get_url):
+        from wesgi import _process_include, Policy
+        # by default we don't forllow redirects
+        def side_effect(*args):
+            def second_call(*args):
+                return MockResponse('<div>example redirect</div>')
+            get_url.side_effect = second_call
+            return MockResponse('', status=301, headers=dict(Location="http://www.example.com/redirected"))
+        get_url.side_effect = side_effect
+        self.assertRaises(Exception, _process_include, 'before<esi:include src="http://www.example.com"/>after')
+        # unless it's specified in the policy
+        policy = Policy()
+        policy.chase_redirect = True
+        get_url.reset_mock()
+        get_url.side_effect = side_effect
+        data = _process_include('before<esi:include src="http://www.example.com"/>after', policy=policy)
+        self.assertEquals(data, 'before<div>example redirect</div>after') 
+        self.assertEquals(get_url.call_count, 2)
+        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
+                                                   (('http', 'www.example.com', None, '/redirected'), {})])
+
+    @patch_get_url
     def test_recursive(self, get_url):
         counter = range(10)
         def side_effect(*args):
             if not counter:
-                return '-last'
+                return MockResponse('-last')
             count = counter.pop(0)
             fragment = count + 1 # the nth fragment that we are including
             count += 2 # count starts at 0, but first time we include is level 2
-            return '-%s<esi:include src="http://www.example.com/%s"/>' % (count, fragment)
+            return MockResponse('-%s<esi:include src="http://www.example.com/%s"/>' % (count, fragment))
         get_url.side_effect = side_effect
         from wesgi import _process_include, RecursionError, AkamaiPolicy
         data = _process_include('level-1<esi:include src="http://www.example.com"/>-after')
@@ -88,7 +120,7 @@ class TestProcessInclude(TestCase):
             pass
         def side_effect(*args):
             def second_call(*args):
-                return '<div>example alt</div>'
+                return MockResponse('<div>example alt</div>')
             get_url.side_effect = second_call
             raise Oops('oops')
         get_url.side_effect = side_effect
@@ -161,7 +193,7 @@ class TestMiddleWare(TestCase):
 
     @patch_get_url
     def test_process(self, get_url):
-        get_url.return_value = '<div>example</div>'
+        get_url.return_value = MockResponse('<div>example</div>')
         mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
 
         start_response = Mock()
@@ -175,7 +207,7 @@ class TestMiddleWare(TestCase):
     @patch_get_url
     def test_process_ssl(self, get_url):
         from wesgi import IncludeError
-        get_url.return_value = '<div>example</div>'
+        get_url.return_value = MockResponse('<div>example</div>')
         mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
 
         # trying to include an http: url from an https page raises an error
@@ -198,13 +230,13 @@ if all_tests:
 
         def test_http(self):
             from wesgi import _get_url
-            result = _get_url('http', 'www.google.es', None, '/')        
-            self.assertTrue("google" in result.lower())
+            result = _get_url('http', 'www.google.es', None, '/')
+            self.assertTrue("google" in result.read().lower())
 
         def test_https(self):
             from wesgi import _get_url
-            result = _get_url('https', 'encrypted.google.com', None, '/')        
-            self.assertTrue("google" in result.lower())
+            result = _get_url('https', 'encrypted.google.com', None, '/')
+            self.assertTrue("google" in result.read().lower())
 
 def load_tests(loader, standard_tests, pattern):
     if all_tests:

@@ -34,6 +34,13 @@ To simulate an Akamai Production environment:
     
     >>> app = MiddleWare(demo_app, policy='akamai')
 
+To simulate an Akamai Production environment with "chase redirect" turned on:
+    
+    >>> from wesgi import AkamaiPolicy
+    >>> policy = AkamaiPolicy()
+    >>> policy.chase_redirect = True
+    >>> app = MiddleWare(demo_app, policy=policy)
+
 If you wish to use it for a production server, it's advisable to turn debug
 mode off:
     
