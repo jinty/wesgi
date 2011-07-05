@@ -1,6 +1,19 @@
 CHANGES
 =======
 
+0.6 (unreleased)
+----------------
+
+Features
+++++++++
+
+- None.
+
+Bugfixes
+++++++++
+
+- Fix bug where regular expression to find src:includes could take a long time.
+
 0.5 (2011-07-04)
 ----------------
 

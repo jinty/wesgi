@@ -73,7 +73,7 @@ _re_include = re.compile(r'''<esi:include'''
                              r'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
                              r'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
                              r'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
-                             r'''|(?P<other>[^\s]+)?''' # or find something eles
+                             r'''|(?P<other>[^\s><]+)?''' # or find something eles
                          r'''))+\s*/>''') # match whitespace at the end and the end tag
 
 class _HTTPError(Exception):

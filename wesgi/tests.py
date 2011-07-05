@@ -177,6 +177,19 @@ class TestProcessInclude(TestCase):
         self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
                                                    (('http', 'alt.example.com', None, ''), {})])
 
+    @patch_get_url
+    def test_regression_regex_performance_extra_data(self, get_url):
+        # processing this data used to take a LOONG time
+        get_url.return_value = MockResponse('<div>example</div>')
+        from wesgi import _process_include
+        import time
+        this_dir = os.path.dirname(__file__)
+        test_data = '<esi:include src="http://www.google.com" />\n\t\t\r\n\t\t\t\r\n\t\t\t\t\r\n\t\t\t\t\r\n\t\t\t\r\n\t\t</p>\r\n'
+        now = time.time()
+        data = _process_include(test_data)
+        used = time.time() - now
+        self.assertTrue(used < 0.01, 'Test took too long: %s seconds' % used)
+
 
 class TestMiddleWare(TestCase):
 
