@@ -190,6 +190,45 @@ class TestProcessInclude(TestCase):
         used = time.time() - now
         self.assertTrue(used < 0.01, 'Test took too long: %s seconds' % used)
 
+    @patch_get_url
+    def test_comment(self, get_url):
+        result = '<div>example</div>'
+        get_url.return_value = MockResponse(result)
+        from wesgi import _process_include
+        this_dir = os.path.dirname(__file__)
+        include = '<esi:include src="http://www.example.com" />'
+        test_data = [(include, result),
+                     '<!-- html comment',
+                     (include, result),
+                     '-->',
+                     'blah',
+                     '<!--esi half open esi',
+                     (include, result),
+                     '<!--esi esi comment 1',
+                     (include, include),
+                     '-->',
+                     (include, result),
+                     '<!--esi esi comment 2',
+                     (include, include),
+                     '-->',
+                     '<!--esi esi comment 3 containing a single -',
+                     (include, include),
+                     '-->',
+                     (include, result)]
+        expected = []
+        data = []
+        for i in test_data:
+            input = res = i
+            if not isinstance(i, basestring):
+                input, res = i
+            expected.append(res)
+            data.append(input)
+        data = _process_include(u'\n'.join(data))
+        expected = u'\n'.join(expected)
+        self.assertEquals(data, expected)
+        # regression test for an error
+        data = '<!--esi %s --'
+        self.assertEquals(_process_include(data % include), data % result)
 
 class TestMiddleWare(TestCase):
 

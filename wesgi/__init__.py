@@ -76,6 +76,8 @@ _re_include = re.compile(r'''<esi:include'''
                              r'''|(?P<other>[^\s><]+)?''' # or find something eles
                          r'''))+\s*/>''') # match whitespace at the end and the end tag
 
+_re_comment = re.compile(r'''<!--esi.*?--''', flags=re.DOTALL)
+
 class _HTTPError(Exception):
 
     def __init__(self, url, status):
@@ -111,10 +113,40 @@ def _include_url(orig_url, require_ssl, chase_redirect):
 def _process_include(body, policy=_POLICIES['default'], level=0, require_ssl=None, debug=True):
     if debug and policy.max_nested_includes is not None and level > policy.max_nested_includes:
         raise RecursionError('Too many nested includes', level, body)
+    # identify parts of body which are comments
+    comments = []
+    c_idx = 0
+    while 1:
+        match = _re_comment.search(body, c_idx)
+        if match is None:
+            break
+        c_idx = match.start() + 1
+        if len(body) < match.end() + 1:
+            continue
+        if body[match.end()] != '>':
+            #invalid comment, contains --, ignore it
+            continue
+        # we found a comment
+        c_idx = match.end()
+        comments.append((match.start(), match.end() + 1))
+    c_start = c_end = None
+    if comments:
+        c_start, c_end = comments.pop(0)
+    # process the includes
     index = 0
     new = []
     matches = _re_include.finditer(body)
     for match in matches:
+        if c_end is not None:
+            while c_end is not None and c_end < match.end():
+                # remove comments which we have passed
+                c_start = c_end = None
+                if comments:
+                    c_start, c_end = comments.pop(0)
+            if c_end is not None:
+                # ignore this match if we are in a comment
+                if c_start < match.start() and c_end > match.end():
+                    continue
         # add section before current match to new body
         new.append(body[index:match.start()])
         if match.group('other') or not match.group('src'):

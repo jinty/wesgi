@@ -7,7 +7,7 @@ CHANGES
 Features
 ++++++++
 
-- None.
+- Handle ESI comments.
 
 Bugfixes
 ++++++++

@@ -8,10 +8,6 @@ Correctness
 
     * Everything except esi:include is unimplemented.
     * Add more policies
-    * ignore things like:
-        <!--esi  
-            <p><esi:vars>Hello, $(HTTP_COOKIE{name})!</esi:vars></p>
-        -->
 
 Production Ready
 ----------------
