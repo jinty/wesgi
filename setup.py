@@ -1,15 +1,26 @@
+import os
+
 from setuptools import setup, find_packages
 
+_here = os.path.dirname(__file__)
+
+_readme = os.path.join(_here, 'README.txt')
+_readme = open(_readme, 'r').read()
+
 setup(name='wesgi',
-      version='0.1',
+      version='0.5',
       description='A WSGI middleware which processes ESI directives',
+      url="http://pypi.python.org/pypi/wesgi",
+      long_description=_readme,
       classifiers=[
-        "Development Status :: 2 - Pre-Alpha Development ",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Programming Language :: Python",
+        "License :: OSI Approved :: BSD License",
+        "Operating System :: OS Independent",
         "Topic :: Internet :: WWW/HTTP",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
-        "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
+        "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
         ],
       keywords='web middleware wsgi esi',
       author="Brian Sutherland",
