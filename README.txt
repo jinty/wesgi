@@ -6,12 +6,12 @@ The relevant specifications and documents are:
     - http://www.akamai.com/dl/technical_publications/esi_faq.pdf
 
 Completeness
-------------
+============
 
 This implementation currently only implements <esi:include>.
 
 Performance
------------
+===========
 
 Realistically, under standard Python, WSGI middleware is synchronous. For an
 ESI Processor to reach very high levels of performance, it is probably
@@ -21,7 +21,7 @@ perfomance of this middleware.
 However, depending on the situation, it may be performant enough.
 
 Usage
------
+=====
 
     >>> from wesgi import MiddleWare
     >>> from wsgiref.simple_server import demo_app

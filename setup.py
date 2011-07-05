@@ -7,11 +7,14 @@ _here = os.path.dirname(__file__)
 _readme = os.path.join(_here, 'README.txt')
 _readme = open(_readme, 'r').read()
 
+_changes = os.path.join(_here, 'CHANGES.txt')
+_changes = open(_changes, 'r').read()
+
 setup(name='wesgi',
       version='0.6dev',
       description='A WSGI middleware which processes ESI directives',
       url="http://pypi.python.org/pypi/wesgi",
-      long_description=_readme,
+      long_description='%s\n%s' % (_readme, _changes),
       classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
