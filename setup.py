@@ -8,7 +8,7 @@ _readme = os.path.join(_here, 'README.txt')
 _readme = open(_readme, 'r').read()
 
 setup(name='wesgi',
-      version='0.5',
+      version='0.6dev',
       description='A WSGI middleware which processes ESI directives',
       url="http://pypi.python.org/pypi/wesgi",
       long_description=_readme,
