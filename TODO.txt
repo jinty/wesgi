@@ -14,12 +14,6 @@ Production Ready
 
 To make the code production ready we need to:
 
-    * Implement fragment caching.
-        - Cache plugin system
-        - Based on Cache-Control headers
-        - Create some plugins: Disk, memcache, memory?
-    * HTTP connection management:
-        - Cache connections to backend servers
-        - Limit number of connections in a sane way
+    * Simple memory based cache for httplib2
 
 Note: "production" ready is relative, see README.txt 

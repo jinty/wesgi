@@ -7,6 +7,8 @@ CHANGES
 Features
 ++++++++
 
+- Major refactoring to use httplib2 as the backend to get ESI includes. This
+  brings along HTTP Caching.
 - Handle ESI comments.
 
 Bugfixes

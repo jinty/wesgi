@@ -2,199 +2,242 @@ import os
 from unittest import TestCase
 
 import webob
-from mock import patch, Mock
+from mock import patch, Mock, mocksignature
 
 all_tests = False
 if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
     all_tests = True
 
-patch_get_url = patch('wesgi._get_url', mocksignature=True)
+patch_Http = patch('wesgi.Http', mocksignature=True)
 
-def MockResponse(body='', status=200, headers=None):
-    import httplib
-    MockResponse = Mock(spec=httplib.HTTPResponse)
-    MockResponse.read.return_value = body
-    MockResponse.status = status
-    if headers is None:
-        headers = {}
-    MockResponse.getheader.side_effect = headers.get
-    return MockResponse
+def mock_http_request(http, response=None, content=None):
+    """Return a httplib2.Http with request() mocked out"""
+    http.request = Mock(spec_set=[])
+    mock = http.request
+    if content is not None or response is not None:
+        if content is None:
+            content = ''
+        if response is None:
+            response = Response()
+        mock.return_value = response, content
+
+def Response(status=200, headers=None):
+    import httplib2
+    assert isinstance(status, int)
+    d = dict(status=str(status))
+    if headers is not None:
+        d.update(headers)
+    return httplib2.Response(d)
+
+def run_mw(mw):
+    start_response = Mock()
+    request = webob.Request.blank("")
+    response = mw(request.environ, start_response)
+    return ''.join(response)
+
+def make_mw(app=None, **kw):
+    status = kw.pop('http_status', 200)
+    headers = kw.pop('http_headers', None)
+    content = kw.pop('http_content', '')
+    if app is None:
+        body = kw.pop('app_body', '')
+        app = make_app(body=body)
+    from wesgi import MiddleWare
+    mw = MiddleWare(app, **kw)
+    mock_http_request(mw.http, Response(status=status, headers=headers), content)
+    return mw
+
+def make_app(body='', content_type='text/html', status=200):
+    def _app(environ, start_response):
+        response = webob.Response(body, content_type=content_type)
+        response.status = status
+        return response(environ, start_response)
+    return _app
+
 
 class TestProcessInclude(TestCase):
 
-    @patch_get_url
-    def test_return_none_if_no_match(self, get_url):
-        from wesgi import _process_include
-        data = _process_include('')
-        self.assertEquals(data, None) 
-        self.assertFalse(get_url.called)
-        data = _process_include('something')
-        self.assertEquals(data, None) 
-        self.assertFalse(get_url.called)
-        data = _process_include('<html><head></head><body><h1>HI</h1><esi:not_an_include whatever="bobo"/></body></html>')
-        self.assertEquals(data, None) 
-        self.assertFalse(get_url.called)
+    def test_return_none_if_no_match(self):
+        mw = make_mw()
+        mock = mw.http.request
+        data = mw._process_include('')
+        self.assertEquals(data, None)
+        self.assertFalse(mock.called)
+        data = mw._process_include('something')
+        self.assertEquals(data, None)
+        self.assertFalse(mock.called)
+        data = mw._process_include('<html><head></head><body><h1>HI</h1><esi:not_an_include whatever="bobo"/></body></html>')
+        self.assertEquals(data, None)
+        self.assertFalse(mock.called)
 
-    @patch_get_url
-    def test_match(self, get_url):
-        get_url.return_value = MockResponse('<div>example</div>')
-        from wesgi import _process_include
-        data = _process_include('before<esi:include src="http://www.example.com"/>after')
-        self.assertEquals(data, 'before<div>example</div>after') 
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
+    def test_match(self):
+        mw = make_mw(http_content='<div>example</div>')
+        data = mw._process_include('before<esi:include src="http://www.example.com"/>after')
+        self.assertEquals(data, 'before<div>example</div>after')
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('http://www.example.com', ), ))
         # onerror="continue" has no effect
-        get_url.reset_mock()
-        data = _process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
-        self.assertEquals(data, 'before<div>example</div>after') 
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
-    
-    @patch_get_url
-    def test_chase_redirect(self, get_url):
-        from wesgi import _process_include, Policy
-        # by default we don't forllow redirects
-        def side_effect(*args):
-            def second_call(*args):
-                return MockResponse('<div>example redirect</div>')
-            get_url.side_effect = second_call
-            return MockResponse('', status=301, headers=dict(Location="http://www.example.com/redirected"))
-        get_url.side_effect = side_effect
-        self.assertRaises(Exception, _process_include, 'before<esi:include src="http://www.example.com"/>after')
-        # unless it's specified in the policy
-        policy = Policy()
-        policy.chase_redirect = True
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        data = _process_include('before<esi:include src="http://www.example.com"/>after', policy=policy)
-        self.assertEquals(data, 'before<div>example redirect</div>after') 
-        self.assertEquals(get_url.call_count, 2)
-        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
-                                                   (('http', 'www.example.com', None, '/redirected'), {})])
+        mw.http.request.reset_mock()
+        data = mw._process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
+        self.assertEquals(data, 'before<div>example</div>after')
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('http://www.example.com', ), ))
 
-    @patch_get_url
-    def test_recursive(self, get_url):
+    def test_recursive(self):
+        from wesgi import RecursionError, AkamaiPolicy
         counter = range(10)
         def side_effect(*args):
             if not counter:
-                return MockResponse('-last')
+                return Response(), '-last'
             count = counter.pop(0)
             fragment = count + 1 # the nth fragment that we are including
             count += 2 # count starts at 0, but first time we include is level 2
-            return MockResponse('-%s<esi:include src="http://www.example.com/%s"/>' % (count, fragment))
-        get_url.side_effect = side_effect
-        from wesgi import _process_include, RecursionError, AkamaiPolicy
-        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after')
+            return Response(), '-%s<esi:include src="http://www.example.com/%s"/>' % (count, fragment)
+        mw = make_mw()
+        mock = mw.http.request
+        mock.side_effect = side_effect
+        data = mw._process_include('level-1<esi:include src="http://www.example.com"/>-after')
         self.assertEquals(data, 'level-1-2-3-4-5-6-7-8-9-10-11-last-after')
-        self.assertEquals(get_url.call_count, 11)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, '/10'), {}))
+        self.assertEquals(mock.call_count, 11)
+        self.assertEquals(mock.call_args, (('http://www.example.com/10', ), ))
         # Akamai FAQ http://www.akamai.com/dl/technical_publications/esi_faq.pdf
         # claims that they support 5 levels of nested includes. Ours should do the same
         # when using the akami policy
         counter.extend(range(5))
-        self.assertRaises(RecursionError, _process_include, 'level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy())
+        mw.policy = AkamaiPolicy()
+        self.assertRaises(RecursionError, mw._process_include, 'level-1<esi:include src="http://www.example.com"/>-after')
         counter.extend(range(4))
-        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy())
+        data = mw._process_include('level-1<esi:include src="http://www.example.com"/>-after')
         self.assertEquals(data, 'level-1-2-3-4-5-last-after')
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, '/4'), {}))
+        self.assertEquals(mock.call_args, (('http://www.example.com/4', ), ))
         # Even with the akamai policy, if we're not in debug mode, no error is raised
         counter.extend(range(10))
-        data = _process_include('level-1<esi:include src="http://www.example.com"/>-after', policy=AkamaiPolicy(), debug=False)
+        mw.debug = False
+        data = mw._process_include('level-1<esi:include src="http://www.example.com"/>-after')
         self.assertEquals(data, 'level-1-2-3-4-5-6-7-8-9-10-11-last-after')
 
-    @patch_get_url
-    def test_invalid(self, get_url):
-        from wesgi import _process_include, InvalidESIMarkup
+    def test_invalid(self):
+        from wesgi import InvalidESIMarkup
+        mw = make_mw()
         invalid1 = 'before<esi:include krud src="http://www.example.com"/>after'
         invalid2 = 'before<esi:include krud="krud" src="http://www.example.com"/>after'
-        self.assertRaises(InvalidESIMarkup, _process_include, invalid1)
-        self.assertRaises(InvalidESIMarkup, _process_include, invalid2)
+        self.assertRaises(InvalidESIMarkup, mw._process_include, invalid1)
+        self.assertRaises(InvalidESIMarkup, mw._process_include, invalid2)
         # if debug is False, these errors are not raised
-        self.assertEquals(_process_include(invalid1, debug=False), 'beforeafter')
-        self.assertEquals(_process_include(invalid2, debug=False), 'beforeafter')
-        self.assertFalse(get_url.called)
+        mw.debug = False
+        self.assertEquals(mw._process_include(invalid1), 'beforeafter')
+        self.assertEquals(mw._process_include(invalid2), 'beforeafter')
+        self.assertFalse(mw.http.request.called)
 
-    @patch_get_url
-    def test_get_url_error_cases(self, get_url):
+    def test_some_http_error_cases(self):
         class Oops(Exception):
             pass
         def side_effect(*args):
             def second_call(*args):
-                return MockResponse('<div>example alt</div>')
-            get_url.side_effect = second_call
+                return Response(), '<div>example alt</div>'
+            mw.http.request.side_effect = second_call
             raise Oops('oops')
-        get_url.side_effect = side_effect
-        from wesgi import _process_include
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
         # without src we get our exception
-        self.assertRaises(Oops, _process_include, 'before<esi:include src="http://www.example.com"/>after')
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
+        self.assertRaises(Oops, mw._process_include, 'before<esi:include src="http://www.example.com"/>after')
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('http://www.example.com', ), ))
         # it is still raised if we turn off debug mode (it's specified in the ESI spec)
-        get_url.side_effect = side_effect
-        self.assertRaises(Oops, _process_include, 'before<esi:include src="http://www.example.com"/>after', debug=False)
+        mw.http.request.side_effect = side_effect
+        mw.debug = False
+        self.assertRaises(Oops, mw._process_include, 'before<esi:include src="http://www.example.com"/>after')
         # unless onerror="continue", in which case the include is silently deleted
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        data = _process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
-        self.assertEquals(data, 'beforeafter') 
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
+        data = mw._process_include('before<esi:include src="http://www.example.com" onerror="continue"/>after')
+        self.assertEquals(data, 'beforeafter')
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('http://www.example.com', ), ))
         # if we add a alt we get back the info from alt
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
-        self.assertEquals(data, 'before<div>example alt</div>after') 
-        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
-                                                   (('http', 'alt.example.com', None, ''), {})])
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
+        data = mw._process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
+        self.assertEquals(data, 'before<div>example alt</div>after')
+        self.assertEquals(mw.http.request.call_args_list, [(('http://www.example.com', ), ),
+                                                   (('http://alt.example.com', ), )])
         # onerror = "continue" has no effect if there is only one error and alt is specified
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
-        self.assertEquals(data, 'before<div>example alt</div>after') 
-        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
-                                                   (('http', 'alt.example.com', None, ''), {})])
-        # If both calls to get_url fail, the second exception is raised
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
+        data = mw._process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
+        self.assertEquals(data, 'before<div>example alt</div>after')
+        self.assertEquals(mw.http.request.call_args_list, [(('http://www.example.com', ), ),
+                                                   (('http://alt.example.com', ), )])
+        # If both calls to mw.http.request fail, the second exception is raised
         class OopsAlt(Exception):
             pass
         def side_effect(*args):
             def second_call(*args):
                 raise OopsAlt('oops')
-            get_url.side_effect = second_call
+            mw.http.request.side_effect = second_call
             raise Oops('oops')
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        self.assertRaises(OopsAlt, _process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
-        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
-                                                   (('http', 'alt.example.com', None, ''), {})])
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
+        self.assertRaises(OopsAlt, mw._process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
+        self.assertEquals(mw.http.request.call_args_list, [(('http://www.example.com', ), ),
+                                                   (('http://alt.example.com', ), )])
         # it is still raised if we turn off debug mode (it's specified in the ESI spec)
-        get_url.side_effect = side_effect
-        self.assertRaises(OopsAlt, _process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after', debug=False)
+        mw.http.request.side_effect = side_effect
+        mw.debug = False
+        self.assertRaises(OopsAlt, mw._process_include, 'before<esi:include src="http://www.example.com" alt="http://alt.example.com"/>after')
         # unless onerror="continue", in which case the include is silently deleted
-        get_url.reset_mock()
-        get_url.side_effect = side_effect
-        data = _process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
-        self.assertEquals(data, 'beforeafter') 
-        self.assertEquals(get_url.call_args_list, [(('http', 'www.example.com', None, ''), {}),
-                                                   (('http', 'alt.example.com', None, ''), {})])
+        mw = make_mw()
+        mw.http.request.side_effect = side_effect
+        data = mw._process_include('before<esi:include src="http://www.example.com" alt="http://alt.example.com" onerror="continue"/>after')
+        self.assertEquals(data, 'beforeafter')
+        self.assertEquals(mw.http.request.call_args_list, [(('http://www.example.com', ), ),
+                                                   (('http://alt.example.com', ), )])
 
-    @patch_get_url
-    def test_regression_regex_performance_extra_data(self, get_url):
+    def test_regression_regex_performance_extra_data(self):
         # processing this data used to take a LOONG time
-        get_url.return_value = MockResponse('<div>example</div>')
-        from wesgi import _process_include
         import time
+        mw = make_mw(http_content='<div>example</div>')
         this_dir = os.path.dirname(__file__)
         test_data = '<esi:include src="http://www.google.com" />\n\t\t\r\n\t\t\t\r\n\t\t\t\t\r\n\t\t\t\t\r\n\t\t\t\r\n\t\t</p>\r\n'
         now = time.time()
-        data = _process_include(test_data)
+        data = mw._process_include(test_data)
         used = time.time() - now
         self.assertTrue(used < 0.01, 'Test took too long: %s seconds' % used)
 
-    @patch_get_url
-    def test_comment(self, get_url):
+class TestMiddleWare(TestCase):
+
+    def test_process(self):
+        mw = make_mw(app_body='before<esi:include src="http://www.example.com"/>after',
+                     http_content="<div>example</div>")
+
+        response = run_mw(mw)
+
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('http://www.example.com', ), ))
+        self.assertEquals(response, 'before<div>example</div>after')
+
+    def test_process_ssl(self):
+        from wesgi import IncludeError
+        mw = make_mw(app_body='before<esi:include src="http://www.example.com"/>after',
+                     http_content='<div>example</div>')
+
+        # trying to include an http: url from an https page raises an error
+        start_response = Mock()
+        request = webob.Request.blank("")
+        request.environ['wsgi.url_scheme'] = 'https'
+        response = self.assertRaises(IncludeError, mw, request.environ, start_response)
+        self.assertEquals(mw.http.request.call_count, 0)
+
+        # https urls do work
+        mw = make_mw(app_body='before<esi:include src="https://www.example.com"/>after',
+                     http_content='<div>example</div>')
+        response = mw(request.environ, start_response)
+        self.assertEquals(mw.http.request.call_count, 1)
+        self.assertEquals(mw.http.request.call_args, (('https://www.example.com', ), ))
+        self.assertEquals(''.join(response), 'before<div>example</div>after')
+    
+    def test_comment(self):
         result = '<div>example</div>'
-        get_url.return_value = MockResponse(result)
-        from wesgi import _process_include
         this_dir = os.path.dirname(__file__)
         include = '<esi:include src="http://www.example.com" />'
         test_data = [(include, result),
@@ -223,72 +266,53 @@ class TestProcessInclude(TestCase):
                 input, res = i
             expected.append(res)
             data.append(input)
-        data = _process_include(u'\n'.join(data))
+        mw = make_mw(http_content=result,
+                     app_body='\n'.join(data))
+        data = run_mw(mw)
         expected = u'\n'.join(expected)
         self.assertEquals(data, expected)
         # regression test for an error
         data = '<!--esi %s --'
-        self.assertEquals(_process_include(data % include), data % result)
+        self.assertEquals(mw._process_include(data % include), data % result)
 
-class TestMiddleWare(TestCase):
 
-    def _one(self, *arg, **kw):
-        from wesgi import MiddleWare
-        return MiddleWare(*arg, **kw)
+class TestPolicy(TestCase):
 
-    def _make_app(self, body, content_type='text/html', status=200):
-        def _app(environ, start_response):
-            response = webob.Response(body, content_type=content_type)
-            response.status = status
-            return response(environ, start_response)
-        return _app
+    def test_chase_redirect(self):
+        from wesgi import Policy
+        policy = Policy()
+        self.assertEquals(policy.http().follow_redirects, False)
+        # unless it's specified in the policy
+        policy = Policy()
+        policy.chase_redirect = True
+        self.assertEquals(policy.http().follow_redirects, True)
 
-    @patch_get_url
-    def test_process(self, get_url):
-        get_url.return_value = MockResponse('<div>example</div>')
-        mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
+    def test_cache(self):
+        # no caching by default
+        from wesgi import Policy
+        policy = Policy()
+        self.assertEquals(policy.cache(), None)
 
-        start_response = Mock()
-        request = webob.Request.blank("")
-        response = mw(request.environ, start_response)
-
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('http', 'www.example.com', None, ''), {}))
-        self.assertEquals(''.join(response), 'before<div>example</div>after') 
-
-    @patch_get_url
-    def test_process_ssl(self, get_url):
-        from wesgi import IncludeError
-        get_url.return_value = MockResponse('<div>example</div>')
-        mw = self._one(self._make_app('before<esi:include src="http://www.example.com"/>after', content_type='text/html'))
-
-        # trying to include an http: url from an https page raises an error
-        start_response = Mock()
-        request = webob.Request.blank("")
-        request.environ['wsgi.url_scheme'] = 'https'
-        response = self.assertRaises(IncludeError, mw, request.environ, start_response)
-        self.assertEquals(get_url.call_count, 0)
-
-        # https urls do work
-        mw = self._one(self._make_app('before<esi:include src="https://www.example.com"/>after', content_type='text/html'))
-        response = mw(request.environ, start_response)
-        self.assertEquals(get_url.call_count, 1)
-        self.assertEquals(get_url.call_args, (('https', 'www.example.com', None, ''), {}))
-        self.assertEquals(''.join(response), 'before<div>example</div>after') 
 
 if all_tests:
-    class TestGetURL(TestCase):
+    class TestRealRequest(TestCase):
         # test not run by default as it requires network connectivity
 
         def test_http(self):
-            from wesgi import _get_url
-            result = _get_url('http', 'www.google.es', None, '/')
-            self.assertTrue("google" in result.read().lower())
+            from wesgi import Policy
+            policy = Policy()
+            policy.chase_redirect = True
+            http = policy.http()
+            result, content = http.request('http://www.google.com/')
+            self.assertTrue("google" in content.lower())
 
         def test_https(self):
-            from wesgi import _get_url
-            result = _get_url('https', 'encrypted.google.com', None, '/')
-            self.assertTrue("google" in result.read().lower())
+            from wesgi import Policy
+            policy = Policy()
+            policy.chase_redirect = True
+            http = policy.http()
+            result, content = http.request('https://encrypted.google.com/')
+            self.assertTrue("google" in content.lower())
 
 def load_tests(loader, standard_tests, pattern):
     if all_tests:
