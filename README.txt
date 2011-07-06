@@ -42,6 +42,16 @@ To simulate an Akamai Production environment with "chase redirect" turned on:
     >>> app = MiddleWare(demo_app, policy=policy)
 
 If you wish to use it for a production server, it's advisable to turn debug
-mode off:
+mode off and enable some kind of cache:
     
-    >>> app = MiddleWare(demo_app, debug=False)
+    >>> from wesgi import LRUCache
+    >>> from wesgi import Policy
+    >>> policy.cache = LRUCache()
+    >>> app = MiddleWare(demo_app, debug=False, policy=policy)
+
+The LRUCache is a memory based cache using an approximation of the LRU
+algorithm. The good parts of it were inspired by Raymond Hettinger's lru_cache
+recipe.
+
+Other available caches that can be easily integrated are httplib2's FileCache
+or memcache. See the httplib2 documentation for details.

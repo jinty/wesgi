@@ -9,6 +9,7 @@ Features
 
 - Major refactoring to use httplib2 as the backend to get ESI includes. This
   brings along HTTP Caching.
+- A memory based implementation of the LRU caching algoritm at wesgi.LRUCache.
 - Handle ESI comments.
 
 Bugfixes

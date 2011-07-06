@@ -291,8 +291,193 @@ class TestPolicy(TestCase):
         # no caching by default
         from wesgi import Policy
         policy = Policy()
-        self.assertEquals(policy.cache(), None)
+        self.assertEquals(policy.cache, None)
 
+class TestLRUCache(TestCase):
+
+    def test_basic(self):
+        from wesgi import LRUCache
+        cache = LRUCache()
+        self.assertEquals(cache.get('a'), None)
+        self.assertEquals(cache.get('b'), None)
+        self.assertEquals(cache._refcount, {'a': 1, 'b': 1})
+        self.assertEquals(cache._cache, {})
+        cache.set('a', 'x')
+        self.assertInvariants(cache)
+        self.assertEquals(cache.get('a'), 'x')
+        self.assertEquals(cache.get('b'), None)
+        self.assertEquals(cache._refcount, {'a': 3, 'b': 2})
+        self.assertEquals(cache._cache, {'a': 'x'})
+        cache.set('b', 'y')
+        self.assertInvariants(cache)
+        self.assertEquals(cache.get('a'), 'x')
+        self.assertEquals(cache.get('b'), 'y')
+        self.assertEquals(cache._refcount, {'a': 4, 'b': 4})
+        self.assertEquals(cache._cache, {'a': 'x', 'b': 'y'})
+        cache.set('b', 'z')
+        self.assertInvariants(cache)
+        self.assertEquals(cache.get('a'), 'x')
+        self.assertEquals(cache.get('b'), 'z')
+        self.assertEquals(cache._refcount, {'a': 5, 'b': 6})
+        self.assertEquals(cache._cache, {'a': 'x', 'b': 'z'})
+        cache.delete('b')
+        self.assertInvariants(cache)
+        self.assertEquals(cache._refcount, {'a': 5, 'b': 6})
+        self.assertEquals(cache.get('a'), 'x')
+        self.assertEquals(cache.get('b'), None)
+        self.assertEquals(cache._cache, {'a': 'x'})
+        cache.delete('a')
+        self.assertInvariants(cache)
+        self.assertEquals(cache._refcount, {'a': 6, 'b': 7})
+        self.assertEquals(cache.get('a'), None)
+        self.assertEquals(cache.get('b'), None)
+        self.assertEquals(cache._cache, {})
+    
+    def test_hit_miss(self):
+        # an LRU's biggest weakness is the sequential scan
+        # this is what happens
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=3)
+        cache.get('a')
+        cache.set('a', 'a')
+        self.assertEquals(cache.hits, 0)
+        self.assertEquals(cache.misses, 1)
+        cache.get('a')
+        self.assertEquals(cache.hits, 1)
+        self.assertEquals(cache.misses, 1)
+        cache.get('b')
+        self.assertEquals(cache.hits, 1)
+        self.assertEquals(cache.misses, 2)
+        cache.get('a')
+        self.assertEquals(cache.hits, 2)
+        self.assertEquals(cache.misses, 2)
+        self.assertInvariants(cache)
+    
+    def test_repeated_get_and_set_flushes_cache(self):
+        # an LRU's biggest weakness is the sequential scan
+        # this is what happens
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=3)
+        cache.get('a')
+        cache.set('a', 'a')
+        cache.get('b')
+        cache.set('b', 'b')
+        for i in range(100): 
+            cache.get(str(i))
+            cache.set(str(i), str(i))
+        self.assertEquals(cache._cache, {'99': '99', '98': '98', '97': '97'})
+        self.assertEquals(cache.hits, 0)
+        self.assertEquals(cache.misses, 102)
+        self.assertInvariants(cache)
+    
+    def test_repeated_set_without_get_does_not_flushe_cache(self):
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=3)
+        cache.get('a')
+        cache.set('a', 'a')
+        cache.get('b')
+        cache.set('b', 'b')
+        for i in range(100): 
+            cache.set(str(i), str(i))
+        self.assertEquals(cache._cache, {'99': '99', 'a': 'a', 'b': 'b'})
+        self.assertInvariants(cache)
+
+    def test_queue_compaction(self):
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=10)
+        [cache.get(1) for i in range(100)] # fill up to maxqueue
+        self.assertEquals(list(cache._queue), [1 for i in xrange(100)]) # our queue is full
+        self.assertEquals(cache._refcount, {1: 100})
+        cache.get(1) #push us over the limit
+        self.assertEquals(list(cache._queue), [1])
+        self.assertEquals(cache._refcount, {1: 1})
+        self.assertInvariants(cache)
+
+    def test_queue_comaction_different_values(self):
+        from wesgi import LRUCache
+        # test compaction with a different value first
+        cache = LRUCache(maxsize=10)
+        cache.get(2)
+        [cache.get(1) for i in range(49)]
+        cache.get(2)
+        [cache.get(1) for i in range(50)] # Push us one over the limit
+        self.assertEquals(list(cache._queue), [2, 1])
+        self.assertEquals(cache._refcount, {1: 1, 2: 1})
+        # and after
+        cache = LRUCache(maxsize=10)
+        [cache.get(1) for i in range(49)]
+        cache.get(2)
+        [cache.get(1) for i in range(50)]
+        cache.get(2) # Push us one over the limit
+        self.assertEquals(list(cache._queue), [1, 2])
+        self.assertEquals(cache._refcount, {1: 1, 2: 1})
+        self.assertInvariants(cache)
+
+    def test_queue_emptying(self):
+        # the queue is emptied when it gets too big and we cannot compact
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=10)
+        [cache.get(i) for i in range(100)] # fill up to maxqueue
+        self.assertEquals(list(cache._queue), range(100)) # all elements are in the queue
+        self.assertEquals(len(cache._queue), 100)
+        self.assertEquals(cache._refcount, dict([(i, 1) for i in range(100)]))
+        cache.get(100) #push us over the limit
+        self.assertEquals(len(cache._queue), 80)
+        self.assertEquals(list(cache._queue), range(21, 101))
+        self.assertEquals(cache._refcount, dict([(i, 1) for i in range(21, 101)]))
+        self.assertInvariants(cache)
+
+    def test_queue_emptying_memory_leak(self):
+        # When we empty the queue, we need to make sure that elements in our cache stay in the queue
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=10)
+        cache.set('x', 'y')
+        [cache.get(i) for i in range(100)] # fill queue over maxsize
+        self.assertEquals(cache._cache, {'x': 'y'})
+        self.assertEquals(len(cache._queue), 80)
+        self.assertEquals(list(cache._queue), ['x'] + range(21, 100))
+        expected_refcount = dict([(i, 1) for i in range(21, 100)])
+        expected_refcount['x'] = 1
+        self.assertEquals(cache._refcount, expected_refcount)
+        self.assertInvariants(cache)
+
+    def test_thread_fuzzing(self):
+        from wesgi import LRUCache
+        import threading
+        import time
+        max = 100
+        no_threads = 2
+        if all_tests:
+            max = 500
+            no_threads = 5
+        cache = LRUCache(maxsize=5)
+        def pound():
+            for k in xrange(max):
+                for i in range(10):
+                    val = cache.get(i)
+                    if not val:
+                        cache.set(i, k)
+                    cache.get(i - 1)
+                    cache.get(i - 3)
+                    cache.get(i + 3)
+                    cache.delete(i + 1)
+                    cache.set(i + 2, k)
+        threads = []
+        for i in range(no_threads):
+            threads.append(threading.Thread(target=pound))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertInvariants(cache)
+
+    def assertInvariants(self, cache):
+        count = {}
+        for k in cache._queue:
+            count[k] = count.setdefault(k, 0) + 1
+        self.assertEquals(count, cache._refcount)
+        for k in cache._cache:
+            self.assertTrue(k in count, k)
 
 if all_tests:
     class TestRealRequest(TestCase):
@@ -305,6 +490,22 @@ if all_tests:
             http = policy.http()
             result, content = http.request('http://www.google.com/')
             self.assertTrue("google" in content.lower())
+
+        def test_cached_http(self):
+            from wesgi import LRUCache
+            from wesgi import Policy
+            policy = Policy()
+            policy.cache = LRUCache()
+            policy.chase_redirect = True
+            http = policy.http()
+            self.assertEquals(0, policy.cache.hits + policy.cache.misses)
+            result, content = http.request('http://www.google.com/')
+            self.assertTrue("google" in content.lower())
+            self.assertFalse(result.fromcache)
+            self.assertNotEquals(0, policy.cache.hits + policy.cache.misses)
+            result, content = http.request('http://www.google.com/')
+            self.assertTrue("google" in content.lower())
+            self.assertNotEquals(0, policy.cache.hits + policy.cache.misses)
 
         def test_https(self):
             from wesgi import Policy

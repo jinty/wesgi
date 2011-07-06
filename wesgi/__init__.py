@@ -1,4 +1,6 @@
 import re
+import threading
+import collections
 from httplib2 import Http
 from urlparse import urlsplit, urlunsplit
 
@@ -23,6 +25,103 @@ class Policy(object):
 class AkamaiPolicy(Policy):
     """Configure the middleware to behave like akamai"""
     max_nested_includes = 5
+
+#
+# Cache
+#
+
+_marker = object()
+
+class _Counter(dict):
+
+    def __missing__(self, key):
+        return 0
+
+class LRUCache(object):
+
+    def __init__(self, maxsize=1000):
+        # 1000 * 40kb/page ~ 40Mb
+        maxqueue = maxsize * 10
+        queuedrop = maxsize * 2
+        # set instance variables so we can test
+        self._cache = cache = {}
+        self._refcount = refcount = _Counter()
+        self._queue = queue = collections.deque()
+        lock = threading.Lock()
+        self.hits = 0
+        self.misses = 0
+
+        def compact_queue():
+            # compact the queue when it gets too big
+            # first: remove duplicates
+            refcount.clear()
+            queue.appendleft(_marker)
+            for k in iter(queue.pop, _marker):
+                if k in refcount:
+                    continue
+                queue.appendleft(k)
+                refcount[k] = 1
+            if len(queue) > maxqueue:
+                # if we're still too big, and have no duplicates
+                # there's probably something hammering the same thing remove 
+                # queuedrop items not in our cache
+                count = 0
+                queue.append(_marker)
+                while count <= queuedrop:
+                    key = queue.popleft()
+                    assert key is not _marker
+                    if key in self._cache:
+                        queue.append(key)
+                    else:
+                        count += 1
+                        del refcount[key]
+                for k in iter(queue.popleft, _marker):
+                    queue.append(k)
+
+        def get(key):
+            if lock.acquire(False):
+                try:
+                    queue.append(key)
+                    refcount[key] = refcount.get(key, 0) + 1
+                    if len(queue) > maxqueue:
+                        compact_queue()
+                finally:
+                    lock.release()
+            val = cache.get(key, _marker)
+            if val is not _marker:
+                self.hits += 1
+                return val
+            self.misses += 1
+            return None
+
+        def set(key, value):
+            orig_key = key
+            if len(cache) >= maxsize:
+                # remove least recently used
+                key = queue.popleft()
+                refcount[key] -= 1
+                while refcount[key]:
+                    key = queue.popleft()
+                    refcount[key] -= 1
+                del refcount[key]
+                delete(key)
+            queue.appendleft(orig_key)
+            refcount[orig_key] += 1
+            cache[orig_key] = value
+        
+        def locked_set(key, value):
+            lock.acquire()
+            try:
+                set(key, value)
+            finally:
+                lock.release()
+
+        def delete(key):
+            cache.pop(key, None)
+
+        self.get = get
+        self.set = locked_set
+        self.delete = delete
 
 #
 # The middleware

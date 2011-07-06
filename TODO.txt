@@ -8,12 +8,3 @@ Correctness
 
     * Everything except esi:include is unimplemented.
     * Add more policies
-
-Production Ready
-----------------
-
-To make the code production ready we need to:
-
-    * Simple memory based cache for httplib2
-
-Note: "production" ready is relative, see README.txt 
