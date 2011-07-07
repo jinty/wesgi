@@ -4,10 +4,10 @@ from setuptools import setup, find_packages
 
 _here = os.path.dirname(__file__)
 
-_readme = os.path.join(_here, 'README.txt')
+_readme = os.path.join(_here, 'README.rst')
 _readme = open(_readme, 'r').read()
 
-_changes = os.path.join(_here, 'CHANGES.txt')
+_changes = os.path.join(_here, 'CHANGES.rst')
 _changes = open(_changes, 'r').read()
 
 setup(name='wesgi',

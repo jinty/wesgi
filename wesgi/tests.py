@@ -520,7 +520,7 @@ def load_tests(loader, standard_tests, pattern):
         # run tests in our README.txt
         import doctest
         this_dir = os.path.dirname(__file__)
-        readme = doctest.DocFileTest(os.path.join(this_dir, '..', 'README.txt'),
+        readme = doctest.DocFileTest(os.path.join(this_dir, '..', 'README.rst'),
                                      module_relative=False)
         standard_tests.addTest(readme)
     return standard_tests
