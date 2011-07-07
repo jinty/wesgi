@@ -1,7 +1,7 @@
 CHANGES
 =======
 
-0.8 (unreleased)
+0.8 (2011-07-07)
 ----------------
 
 Features
