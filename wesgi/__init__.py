@@ -1,4 +1,5 @@
 import re
+import sys
 import threading
 import collections
 from httplib2 import Http
@@ -7,6 +8,16 @@ from urlparse import urlsplit, urlunsplit
 import webob
 
 __all__ = ['Policy', 'AkamaiPolicy', 'MiddleWare', 'InvalidESIMarkup', 'RecursionError']
+
+try:
+    from sys import getsizeof 
+except ImportError:
+    # Python 2.5
+    def getsizeof(obj):
+        if isinstance(obj, basestring):
+            # approximation for strings, which is what httplib stores
+            return len(obj)
+        return 0
 
 #
 # Policies that can make the middleware work like different ESI processors
@@ -26,6 +37,7 @@ class AkamaiPolicy(Policy):
     """Configure the middleware to behave like akamai"""
     max_nested_includes = 5
 
+
 #
 # Cache
 #
@@ -39,7 +51,7 @@ class _Counter(dict):
 
 class LRUCache(object):
 
-    def __init__(self, maxsize=1000):
+    def __init__(self, maxsize=1000, max_object_size=102400):
         # 1000 * 40kb/page ~ 40Mb
         maxqueue = maxsize * 10
         queuedrop = maxsize * 2
@@ -95,6 +107,9 @@ class LRUCache(object):
             return None
 
         def set(key, value):
+            if max_object_size is not None and getsizeof(value) > max_object_size:
+                # note, this doesn't take into account the size of objects referenced by value
+                return
             orig_key = key
             if len(cache) >= maxsize:
                 # remove least recently used

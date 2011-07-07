@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+0.7 (unreleased)
+----------------
+
+Features
+++++++++
+
+- A ``max_object_size`` option for ``wesgi.LRUCache`` to limit the maximum size
+  of objects stored.
+
 0.6 (2011-07-06)
 ----------------
 

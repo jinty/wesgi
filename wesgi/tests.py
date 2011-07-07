@@ -333,6 +333,16 @@ class TestLRUCache(TestCase):
         self.assertEquals(cache.get('b'), None)
         self.assertEquals(cache._cache, {})
     
+    def test_max_object_size(self):
+        from wesgi import LRUCache
+        cache = LRUCache(maxsize=3, max_object_size=1000)
+        # objects larger than max_object_size are ignored
+        cache.set('a', 'a' * 2000)
+        self.assertEquals(cache._cache, {})
+        # smaller objects are not
+        cache.set('a', 'a')
+        self.assertEquals(cache._cache, {'a': 'a'})
+
     def test_hit_miss(self):
         # an LRU's biggest weakness is the sequential scan
         # this is what happens
@@ -456,12 +466,12 @@ class TestLRUCache(TestCase):
                 for i in range(10):
                     val = cache.get(i)
                     if not val:
-                        cache.set(i, k)
+                        cache.set(i, str(k))
                     cache.get(i - 1)
                     cache.get(i - 3)
                     cache.get(i + 3)
                     cache.delete(i + 1)
-                    cache.set(i + 2, k)
+                    cache.set(i + 2, str(k))
         threads = []
         for i in range(no_threads):
             threads.append(threading.Thread(target=pound))
