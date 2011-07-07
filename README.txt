@@ -55,3 +55,10 @@ recipe.
 
 Other available caches that can be easily integrated are httplib2's FileCache
 or memcache. See the httplib2 documentation for details.
+
+Development
+===========
+
+Development on wesgi is centered around this github branch:
+
+    https://github.com/jinty/wesgi
