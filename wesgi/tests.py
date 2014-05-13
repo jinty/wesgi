@@ -235,7 +235,7 @@ class TestMiddleWare(TestCase):
         self.assertEquals(mw.http.request.call_count, 1)
         self.assertEquals(mw.http.request.call_args, (('https://www.example.com', ), ))
         self.assertEquals(''.join(response), 'before<div>example</div>after')
-    
+
     def test_comment(self):
         result = '<div>example</div>'
         this_dir = os.path.dirname(__file__)
@@ -332,7 +332,7 @@ class TestLRUCache(TestCase):
         self.assertEquals(cache.get('a'), None)
         self.assertEquals(cache.get('b'), None)
         self.assertEquals(cache._cache, {})
-    
+
     def test_max_object_size(self):
         from wesgi import LRUCache
         cache = LRUCache(maxsize=3, max_object_size=1000)
@@ -362,7 +362,7 @@ class TestLRUCache(TestCase):
         self.assertEquals(cache.hits, 2)
         self.assertEquals(cache.misses, 2)
         self.assertInvariants(cache)
-    
+
     def test_repeated_get_and_set_flushes_cache(self):
         # an LRU's biggest weakness is the sequential scan
         # this is what happens
@@ -372,14 +372,14 @@ class TestLRUCache(TestCase):
         cache.set('a', 'a')
         cache.get('b')
         cache.set('b', 'b')
-        for i in range(100): 
+        for i in range(100):
             cache.get(str(i))
             cache.set(str(i), str(i))
         self.assertEquals(cache._cache, {'99': '99', '98': '98', '97': '97'})
         self.assertEquals(cache.hits, 0)
         self.assertEquals(cache.misses, 102)
         self.assertInvariants(cache)
-    
+
     def test_repeated_set_without_get_does_not_flushe_cache(self):
         from wesgi import LRUCache
         cache = LRUCache(maxsize=3)
@@ -387,7 +387,7 @@ class TestLRUCache(TestCase):
         cache.set('a', 'a')
         cache.get('b')
         cache.set('b', 'b')
-        for i in range(100): 
+        for i in range(100):
             cache.set(str(i), str(i))
         self.assertEquals(cache._cache, {'99': '99', 'a': 'a', 'b': 'b'})
         self.assertInvariants(cache)

@@ -10,7 +10,7 @@ import webob
 __all__ = ['Policy', 'AkamaiPolicy', 'MiddleWare', 'InvalidESIMarkup', 'RecursionError']
 
 try:
-    from sys import getsizeof 
+    from sys import getsizeof
 except ImportError:
     # Python 2.5
     def getsizeof(obj):
@@ -75,7 +75,7 @@ class LRUCache(object):
                 refcount[k] = 1
             if len(queue) > maxqueue:
                 # if we're still too big, and have no duplicates
-                # there's probably something hammering the same thing remove 
+                # there's probably something hammering the same thing remove
                 # queuedrop items not in our cache
                 count = 0
                 queue.append(_marker)
@@ -123,7 +123,7 @@ class LRUCache(object):
             queue.appendleft(orig_key)
             refcount[orig_key] += 1
             cache[orig_key] = value
-        
+
         def locked_set(key, value):
             lock.acquire()
             try:
