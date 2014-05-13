@@ -3,7 +3,11 @@ import sys
 import threading
 import collections
 from httplib2 import Http
-from urlparse import urlsplit, urlunsplit
+try:
+    from urllib.parse import urlsplit
+except ImportError:
+    # Python 2
+    from urlparse import urlsplit
 
 import webob
 
@@ -18,6 +22,11 @@ except ImportError:
             # approximation for strings, which is what httplib stores
             return len(obj)
         return 0
+
+try:
+    basestring
+except NameError:
+    basestring = str
 
 #
 # Policies that can make the middleware work like different ESI processors
@@ -170,6 +179,10 @@ class MiddleWare(object):
         # identify parts of body which are comments
         comments = []
         c_idx = 0
+
+        # Compatibility workaround: in python 2 this returns ``'>'``,
+        # in python 3 it's ``62``.
+        end_of_comment_marker = b'>'[0]
         while 1:
             match = _re_comment.search(body, c_idx)
             if match is None:
@@ -177,8 +190,8 @@ class MiddleWare(object):
             c_idx = match.start() + 1
             if len(body) < match.end() + 1:
                 continue
-            if body[match.end()] != '>':
-                #invalid comment, contains --, ignore it
+            if body[match.end()] != end_of_comment_marker:
+                # invalid comment, contains --, ignore it
                 continue
             # we found a comment
             c_idx = match.end()
@@ -226,12 +239,12 @@ class MiddleWare(object):
                     try:
                         new_content = _include_url(match.group('alt'), require_ssl, policy.chase_redirect, self.http)
                     except:
-                        if match.group('onerror') == 'continue':
-                            new_content = ''
+                        if match.group('onerror') == b'continue':
+                            new_content = b''
                         else:
                             raise
-                elif match.group('onerror') == 'continue':
-                    new_content = ''
+                elif match.group('onerror') == b'continue':
+                    new_content = b''
                 else:
                     raise
             if new_content:
@@ -246,7 +259,7 @@ class MiddleWare(object):
         if not index:
             return None
         new.append(body[index:])
-        return ''.join(new)
+        return b''.join(new)
 
 #
 # Exceptions we can raise
@@ -273,15 +286,15 @@ class IncludeError(Exception):
 _POLICIES = {'default': Policy(),
              'akamai': AkamaiPolicy()}
 
-_re_include = re.compile(r'''<esi:include'''
-                         r'''(?:\s+(?:''' # whitespace at start of tag
-                             r'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
-                             r'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
-                             r'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
-                             r'''|(?P<other>[^\s><]+)?''' # or find something eles
-                         r'''))+\s*/>''') # match whitespace at the end and the end tag
+_re_include = re.compile(br'''<esi:include'''
+                         br'''(?:\s+(?:''' # whitespace at start of tag
+                             br'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
+                             br'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
+                             br'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
+                             br'''|(?P<other>[^\s><]+)?''' # or find something eles
+                         br'''))+\s*/>''') # match whitespace at the end and the end tag
 
-_re_comment = re.compile(r'''<!--esi.*?--''', flags=re.DOTALL)
+_re_comment = re.compile(br'''<!--esi.*?--''', flags=re.DOTALL)
 
 class _HTTPError(Exception):
 
@@ -292,7 +305,7 @@ class _HTTPError(Exception):
 
 def _include_url(orig_url, require_ssl, chase_redirect, http):
     url = urlsplit(orig_url)
-    if require_ssl and url.scheme != 'https':
+    if require_ssl and url.scheme != b'https':
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
     resp, content = http.request(orig_url)
     if resp.status == 200:
