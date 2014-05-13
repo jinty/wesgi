@@ -2,7 +2,7 @@ import os
 from unittest import TestCase
 
 import webob
-from mock import patch, Mock, mocksignature
+from mock import patch, Mock
 
 all_tests = False
 if os.environ.get('WESGI_ALL_TESTS', 'false').lower() in ('true', '1', 't'):
