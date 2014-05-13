@@ -1,3 +1,5 @@
 /wesgi.egg-info
 /*.egg
 /dist
+/.tox
+*.pyc
