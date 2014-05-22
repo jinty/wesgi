@@ -47,9 +47,13 @@ class AkamaiPolicy(Policy):
     max_nested_includes = 5
 
 
-#: Client headers to forward in subrequests
-forward_headers = set(['cookie', 'authorization', 'referer',
-                       'accept-language'])
+
+#: Client headers to forward in subrequests to all servers
+forward_headers_all_servers = set(['accept-language', 'cache-control'])
+
+#: Client headers to forward only in subrequests to the same server
+forward_headers_same_origin = forward_headers_all_servers | \
+        set(['cookie', 'authorization', 'referer'])
 
 #
 # Cache
@@ -307,16 +311,51 @@ class _HTTPError(Exception):
         message = 'Url returned %s: %s' % (status, url)
         super(_HTTPError, self).__init__(message)
 
+
+def _forward_all_headers_allowed(origin_host, is_ssl, url):
+    """
+    Return True if headers can be forwarded to urlparse result ``url``.
+    This returns true if ``url`` refers to the same server and same protocol
+    (http, https) as ``origin_host``.
+
+    This is overly simplistic,
+    """
+
+    # Fail safe in the case that the original host header was not specified
+    if not origin_host:
+        return False
+
+    # Don't allow headers to be fowarded from https -> http or vice versa
+    if is_ssl != bool(url.scheme == 'https'):
+        return False
+
+    url_host = url.netloc
+
+    if ':' not in url_host:
+        url_host += ':443' if is_ssl else ':80'
+
+    if ':' not in origin_host:
+        origin_host += ':443' if is_ssl else ':80'
+
+    return url_host == origin_host
+
+
 def _include_url(orig_url, headers, require_ssl, chase_redirect, http):
     orig_url = orig_url.decode('ascii')
     url = urlsplit(orig_url)
     if require_ssl and url.scheme != 'https':
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
+
+    if _forward_all_headers_allowed(headers.get('Host'), require_ssl, url):
+        forward_headers = forward_headers_same_origin
+    else:
+        forward_headers = forward_headers_all_servers
+
     headers = dict((k, v)
-                   for k, v in headers.items()
-                   if k.lower() in forward_headers)
+                    for k, v in headers.items()
+                    if k.lower() in forward_headers)
+
     resp, content = http.request(orig_url, headers=dict(headers))
     if resp.status == 200:
         return content
     raise _HTTPError(orig_url, resp.status)
-

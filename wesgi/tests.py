@@ -288,23 +288,37 @@ class TestMiddleWare(TestCase):
         self.assertEqual(mw._process_include(b'<!--esi ' + include + b' --', {}),
                                               b'<!--esi ' + result + b' --')
 
-    def test_it_relays_request_headers(self):
+    def test_it_forwards_request_headers(self):
         mw = make_mw(app_body=b'<esi:include src="http://www.example.com"/>')
-        run_mw(mw, headers={'Cookie': 'x'})
+        run_mw(mw, headers={'Host': 'www.example.com:80',
+                            'Cookie': 'x'})
         self.assertEqual(mw.http.request.call_args,
                          call('http://www.example.com',
                               headers={'Cookie': 'x'}))
 
-    def test_it_doesnt_relay_inappropriate_headers(self):
+    def test_it_doesnt_forward_inappropriate_headers(self):
         """
         Relaying eg Content-Length from a POST request will cause the
         subrequest to timeout while the server waits for the non-existant
         content
         """
         mw = make_mw(app_body=b'<esi:include src="http://www.example.com"/>')
-        run_mw(mw, headers={'Content-Length': '100'})
+        run_mw(mw, headers={'Host': 'www.example.com',
+                            'Content-Length': '100'})
         self.assertEqual(mw.http.request.call_args,
                          call('http://www.example.com', headers={}))
+
+    def test_it_forwards_non_sensitive_headers_only_to_non_origin_server(self):
+        """
+        Relaying eg cookies from one server to another is not allowed
+        """
+        mw = make_mw(app_body=b'<esi:include src="http://www.example.net"/>')
+        run_mw(mw, headers={'Host': 'www.example.com',
+                            'Cache-Control': 'no-cache',
+                            'Cookie': 'private'})
+        self.assertEqual(mw.http.request.call_args,
+                         call('http://www.example.net',
+                              headers={'Cache-Control': 'no-cache'}))
 
 
 class TestPolicy(TestCase):
