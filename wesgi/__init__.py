@@ -173,15 +173,14 @@ class MiddleWare(object):
         req = webob.Request(environ)
         resp = req.get_response(self.app)
         if resp.content_type == 'text/html' and resp.status_int == 200:
-            orig_scheme = environ['wsgi.url_scheme']
-            new_body = self._process(resp.body, req.headers, orig_scheme)
+            new_body = self._process(resp.body, req)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)
 
-    def _process(self, body, headers, orig_scheme):
+    def _process(self, body, req):
         commented = self._commented(body)
-        return self._process_include(body, headers, orig_scheme=orig_scheme, comments=commented)
+        return self._process_include(body, req, comments=commented)
 
     def _commented(self, body):
         # identify parts of body which are comments
@@ -206,11 +205,11 @@ class MiddleWare(object):
             comments.append((match.start(), match.end() + 1))
         return tuple(comments)
 
-    def _process_include(self, body, headers, orig_scheme='http', level=0, comments=()):
+    def _process_include(self, body, req, level=0, comments=()):
         debug = self.debug
         policy = self.policy
         comments = list(comments)
-        require_ssl = not (orig_scheme == 'http')
+        require_ssl = not (req.environ['wsgi.url_scheme'] == 'http')
         if debug and policy.max_nested_includes is not None and level > policy.max_nested_includes:
             raise RecursionError('Too many nested includes', level, body)
         c_start = c_end = None
@@ -241,11 +240,11 @@ class MiddleWare(object):
                 continue
             # get content to insert
             try:
-                new_content = _include_url(match.group('src'), headers, require_ssl, policy.chase_redirect, self.http)
+                new_content = _include_url(match.group('src'), req, require_ssl, policy.chase_redirect, self.http)
             except:
                 if match.group('alt'):
                     try:
-                        new_content = _include_url(match.group('alt'), headers, require_ssl, policy.chase_redirect, self.http)
+                        new_content = _include_url(match.group('alt'), req, require_ssl, policy.chase_redirect, self.http)
                     except:
                         if match.group('onerror') == b'continue':
                             new_content = b''
@@ -258,7 +257,7 @@ class MiddleWare(object):
             if new_content:
                 # recurse to process any includes in the new content
                 new_commented = self._commented(new_content)
-                p = self._process_include(new_content, headers, orig_scheme=orig_scheme, comments=new_commented, level=level + 1)
+                p = self._process_include(new_content, req, comments=new_commented, level=level + 1)
                 if p is not None:
                     new_content = p
             new.append(new_content)
@@ -340,9 +339,10 @@ def _forward_all_headers_allowed(origin_host, is_ssl, url):
     return url_host == origin_host
 
 
-def _include_url(orig_url, headers, require_ssl, chase_redirect, http):
+def _include_url(orig_url, req, require_ssl, chase_redirect, http):
     orig_url = orig_url.decode('ascii')
     url = urlsplit(orig_url)
+    headers = req.headers
     if require_ssl and url.scheme != 'https':
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
 
