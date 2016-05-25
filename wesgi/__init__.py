@@ -4,10 +4,10 @@ import threading
 import collections
 from httplib2 import Http
 try:
-    from urllib.parse import urlsplit
+    from urllib.parse import urlsplit, urljoin
 except ImportError:
     # Python 2
-    from urlparse import urlsplit
+    from urlparse import urlsplit, urljoin
 
 import webob
 
@@ -341,6 +341,7 @@ def _forward_all_headers_allowed(origin_host, is_ssl, url):
 
 def _include_url(orig_url, req, require_ssl, chase_redirect, http):
     orig_url = orig_url.decode('ascii')
+    orig_url = urljoin(req.path_url, orig_url)
     url = urlsplit(orig_url)
     headers = req.headers
     if require_ssl and url.scheme != 'https':

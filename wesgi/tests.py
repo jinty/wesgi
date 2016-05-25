@@ -327,6 +327,16 @@ class TestMiddleWare(TestCase):
                          call('http://www.example.net',
                               headers={'Cache-Control': 'no-cache'}))
 
+    def test_relative_links_are_turned_into_absolute_for_backend_request(self):
+        mw = make_mw(app_body=b'<esi:include src="/relative/url"/>')
+
+        run_mw(mw, headers={'Host': 'www.example.com'})
+
+        self.assertEqual(mw.http.request.call_count, 1)
+        self.assertEqual(
+                mw.http.request.call_args[0],
+                ('http://www.example.com/relative/url', ))
+
 
 class TestPolicy(TestCase):
 
