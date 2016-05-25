@@ -12,6 +12,7 @@ except ImportError:
 import webob
 
 __all__ = ['Policy', 'AkamaiPolicy', 'MiddleWare', 'InvalidESIMarkup', 'RecursionError']
+_marker = object()
 
 try:
     from sys import getsizeof
@@ -28,6 +29,34 @@ try:
 except NameError:
     basestring = str
 
+def _parse_bool(arg):
+    return {'true': True,
+            'false': False}[arg.lower()]
+
+def filter_app_factory(app,
+                       global_config,
+                       **kw):
+    mw_kw = {}
+    if 'debug' in kw:
+        kw['debug'] = _parse_bool(kw['debug'])
+    if 'policy' not in kw:
+        kw['policy'] = 'default'
+    PolicyClass = _POLICIES[kw.pop('policy')]
+    policy_kw = {}
+    for k in kw.keys():
+        if k.startswith('policy_'):
+            policy_kw[k[7:]] = kw.pop(k)
+    kw['policy'] = PolicyClass(**policy_kw)
+    if 'cache' in kw:
+        cache_factory = _CACHES[kw.pop('cache')]
+        cache_kw = {}
+        for k in kw.keys():
+            if k.startswith('cache_'):
+                cache_kw[k[6:]] = kw.pop(k)
+        kw['policy'].cache = cache_factory(**cache_kw)
+    app = MiddleWare(app, **kw)
+    return app
+
 #
 # Policies that can make the middleware work like different ESI processors
 #
@@ -42,10 +71,21 @@ class Policy(object):
         http.follow_redirects = self.chase_redirect
         return http
 
+    @classmethod
+    def from_cfg(cls, max_nested_includes=_marker, chase_redirect=_marker):
+        policy = cls()
+        if max_nested_includes is not _marker:
+            policy.max_nested_includes = _parse_bool(max_nested_includes)
+        if chase_redirect is not _marker:
+            policy.chase_redirect = _parse_bool(chase_redirect)
+        return policy
+
 class AkamaiPolicy(Policy):
     """Configure the middleware to behave like akamai"""
     max_nested_includes = 5
 
+_POLICIES = {'default': Policy.from_cfg,
+             'akamai': AkamaiPolicy.from_cfg}
 
 
 #: Client headers to forward in subrequests to all servers
@@ -58,8 +98,6 @@ forward_headers_same_origin = forward_headers_all_servers | \
 #
 # Cache
 #
-
-_marker = object()
 
 class _Counter(dict):
 
@@ -155,17 +193,27 @@ class LRUCache(object):
         self.set = locked_set
         self.delete = delete
 
+def _lru_from_cfg(**kw):
+    if 'maxsize' in kw:
+        kw['maxsize'] = int(kw['maxsize'])
+    if 'max_object_size' in kw:
+        kw['max_object_size'] = int(kw['max_object_size'])
+    return LRUCache(**kw)
+
+_CACHES = {'lru_memory': _lru_from_cfg}
+
+
 #
 # The middleware
 #
 
 class MiddleWare(object):
 
-    def __init__(self, app, policy='default', debug=True):
+    def __init__(self, app, policy=None, debug=True):
         self.debug = debug
         self.app = app
-        if isinstance(policy, basestring):
-            policy = _POLICIES[policy]
+        if policy is None:
+            policy = Policy()
         self.policy = policy
         self.http = policy.http()
 
@@ -289,9 +337,6 @@ class IncludeError(Exception):
 #
 # The internal bits to do the work
 #
-
-_POLICIES = {'default': Policy(),
-             'akamai': AkamaiPolicy()}
 
 _re_include = re.compile(br'''<esi:include'''
                          br'''(?:\s+(?:''' # whitespace at start of tag

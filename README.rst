@@ -34,6 +34,9 @@ varying definitions of "asynchronous".
 Usage
 =====
 
+Configuration via Python
+------------------------
+
     >>> from wesgi import MiddleWare
     >>> from wsgiref.simple_server import demo_app
 
@@ -43,12 +46,12 @@ To use it in it's default configuration for a development server:
 
 To simulate an Akamai Production environment:
     
-    >>> app = MiddleWare(demo_app, policy='akamai')
+    >>> from wesgi import AkamaiPolicy
+    >>> policy = AkamaiPolicy()
+    >>> app = MiddleWare(demo_app, policy=policy)
 
 To simulate an Akamai Production environment with "chase redirect" turned on:
     
-    >>> from wesgi import AkamaiPolicy
-    >>> policy = AkamaiPolicy()
     >>> policy.chase_redirect = True
     >>> app = MiddleWare(demo_app, policy=policy)
 
@@ -66,6 +69,20 @@ algorithm. The good parts of it were inspired by Raymond Hettinger's
 
 Other available caches that can be easily integrated are ``httplib2``'s
 ``FileCache`` or ``memcache``. See the ``httplib2`` documentation for details.
+
+Configuration via paste.ini
+---------------------------
+
+The ``wesgi.filter_app_factory`` function lets you configure ``wesgi`` in your
+paste.ini file. For example::
+
+    [filter-app:wesgi]
+    paste.filter_app_factory = wesgi:filter_app_factory
+    cache=lru_memory
+    cache_maxsize=10
+    policy=akamai
+    policy_chase_redirect=True
+    next = myapp
 
 Development
 ===========
