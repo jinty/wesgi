@@ -1,6 +1,14 @@
 CHANGES
 =======
 
+0.11 (2016-05-25)
+----------------
+
+Features
+++++++++
+
+- Configuration via paste, rescued from missing 0.9 release.
+
 0.10 (2016-05-25)
 ----------------
 
