@@ -11,7 +11,7 @@ _changes = os.path.join(_here, 'CHANGES.rst')
 _changes = open(_changes, 'r').read()
 
 setup(name='wesgi',
-      version='0.8',
+      version='0.10',
       description='A WSGI middleware which processes ESI directives',
       url="http://pypi.python.org/pypi/wesgi",
       long_description='%s\n%s' % (_readme, _changes),

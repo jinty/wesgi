@@ -1,6 +1,17 @@
 CHANGES
 =======
 
+0.9 (2016-05-25)
+----------------
+
+Features
+++++++++
+
+- Python 3 support, drop Python 2.5 support.
+- Request header forwarding by default.
+- Turn relative links in <esi:include into absolute links before
+  including.
+
 0.8 (2011-07-07)
 ----------------
 
