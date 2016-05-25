@@ -3,14 +3,18 @@ import sys
 import threading
 import collections
 from httplib2 import Http
-from urlparse import urlsplit, urlunsplit
+try:
+    from urllib.parse import urlsplit
+except ImportError:
+    # Python 2
+    from urlparse import urlsplit
 
 import webob
 
 __all__ = ['Policy', 'AkamaiPolicy', 'MiddleWare', 'InvalidESIMarkup', 'RecursionError']
 
 try:
-    from sys import getsizeof 
+    from sys import getsizeof
 except ImportError:
     # Python 2.5
     def getsizeof(obj):
@@ -18,6 +22,11 @@ except ImportError:
             # approximation for strings, which is what httplib stores
             return len(obj)
         return 0
+
+try:
+    basestring
+except NameError:
+    basestring = str
 
 #
 # Policies that can make the middleware work like different ESI processors
@@ -37,6 +46,14 @@ class AkamaiPolicy(Policy):
     """Configure the middleware to behave like akamai"""
     max_nested_includes = 5
 
+
+
+#: Client headers to forward in subrequests to all servers
+forward_headers_all_servers = set(['accept-language', 'cache-control'])
+
+#: Client headers to forward only in subrequests to the same server
+forward_headers_same_origin = forward_headers_all_servers | \
+        set(['cookie', 'authorization', 'referer'])
 
 #
 # Cache
@@ -75,7 +92,7 @@ class LRUCache(object):
                 refcount[k] = 1
             if len(queue) > maxqueue:
                 # if we're still too big, and have no duplicates
-                # there's probably something hammering the same thing remove 
+                # there's probably something hammering the same thing remove
                 # queuedrop items not in our cache
                 count = 0
                 queue.append(_marker)
@@ -123,7 +140,7 @@ class LRUCache(object):
             queue.appendleft(orig_key)
             refcount[orig_key] += 1
             cache[orig_key] = value
-        
+
         def locked_set(key, value):
             lock.acquire()
             try:
@@ -157,19 +174,23 @@ class MiddleWare(object):
         resp = req.get_response(self.app)
         if resp.content_type == 'text/html' and resp.status_int == 200:
             orig_scheme = environ['wsgi.url_scheme']
-            new_body = self._process(resp.body, orig_scheme)
+            new_body = self._process(resp.body, req.headers, orig_scheme)
             if new_body is not None:
                 resp.body = new_body
         return resp(environ, start_response)
 
-    def _process(self, body, orig_scheme):
+    def _process(self, body, headers, orig_scheme):
         commented = self._commented(body)
-        return self._process_include(body, orig_scheme=orig_scheme, comments=commented)
+        return self._process_include(body, headers, orig_scheme=orig_scheme, comments=commented)
 
     def _commented(self, body):
         # identify parts of body which are comments
         comments = []
         c_idx = 0
+
+        # Compatibility workaround: in python 2 this returns ``'>'``,
+        # in python 3 it's ``62``.
+        end_of_comment_marker = b'>'[0]
         while 1:
             match = _re_comment.search(body, c_idx)
             if match is None:
@@ -177,15 +198,15 @@ class MiddleWare(object):
             c_idx = match.start() + 1
             if len(body) < match.end() + 1:
                 continue
-            if body[match.end()] != '>':
-                #invalid comment, contains --, ignore it
+            if body[match.end()] != end_of_comment_marker:
+                # invalid comment, contains --, ignore it
                 continue
             # we found a comment
             c_idx = match.end()
             comments.append((match.start(), match.end() + 1))
         return tuple(comments)
 
-    def _process_include(self, body, orig_scheme='http', level=0, comments=()):
+    def _process_include(self, body, headers, orig_scheme='http', level=0, comments=()):
         debug = self.debug
         policy = self.policy
         comments = list(comments)
@@ -220,24 +241,24 @@ class MiddleWare(object):
                 continue
             # get content to insert
             try:
-                new_content = _include_url(match.group('src'), require_ssl, policy.chase_redirect, self.http)
+                new_content = _include_url(match.group('src'), headers, require_ssl, policy.chase_redirect, self.http)
             except:
                 if match.group('alt'):
                     try:
-                        new_content = _include_url(match.group('alt'), require_ssl, policy.chase_redirect, self.http)
+                        new_content = _include_url(match.group('alt'), headers, require_ssl, policy.chase_redirect, self.http)
                     except:
-                        if match.group('onerror') == 'continue':
-                            new_content = ''
+                        if match.group('onerror') == b'continue':
+                            new_content = b''
                         else:
                             raise
-                elif match.group('onerror') == 'continue':
-                    new_content = ''
+                elif match.group('onerror') == b'continue':
+                    new_content = b''
                 else:
                     raise
             if new_content:
                 # recurse to process any includes in the new content
                 new_commented = self._commented(new_content)
-                p = self._process_include(new_content, orig_scheme=orig_scheme, comments=new_commented, level=level + 1)
+                p = self._process_include(new_content, headers, orig_scheme=orig_scheme, comments=new_commented, level=level + 1)
                 if p is not None:
                     new_content = p
             new.append(new_content)
@@ -246,7 +267,7 @@ class MiddleWare(object):
         if not index:
             return None
         new.append(body[index:])
-        return ''.join(new)
+        return b''.join(new)
 
 #
 # Exceptions we can raise
@@ -273,15 +294,15 @@ class IncludeError(Exception):
 _POLICIES = {'default': Policy(),
              'akamai': AkamaiPolicy()}
 
-_re_include = re.compile(r'''<esi:include'''
-                         r'''(?:\s+(?:''' # whitespace at start of tag
-                             r'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
-                             r'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
-                             r'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
-                             r'''|(?P<other>[^\s><]+)?''' # or find something eles
-                         r'''))+\s*/>''') # match whitespace at the end and the end tag
+_re_include = re.compile(br'''<esi:include'''
+                         br'''(?:\s+(?:''' # whitespace at start of tag
+                             br'''src=["']?(?P<src>[^"'\s]*)["']?''' # find src=
+                             br'''|alt=["']?(?P<alt>[^"'\s]*)["']?''' # or find alt=
+                             br'''|onerror=["']?(?P<onerror>[^"'\s]*)["']?''' # or find onerror=
+                             br'''|(?P<other>[^\s><]+)?''' # or find something eles
+                         br'''))+\s*/>''') # match whitespace at the end and the end tag
 
-_re_comment = re.compile(r'''<!--esi.*?--''', flags=re.DOTALL)
+_re_comment = re.compile(br'''<!--esi.*?--''', flags=re.DOTALL)
 
 class _HTTPError(Exception):
 
@@ -290,12 +311,51 @@ class _HTTPError(Exception):
         message = 'Url returned %s: %s' % (status, url)
         super(_HTTPError, self).__init__(message)
 
-def _include_url(orig_url, require_ssl, chase_redirect, http):
+
+def _forward_all_headers_allowed(origin_host, is_ssl, url):
+    """
+    Return True if headers can be forwarded to urlparse result ``url``.
+    This returns true if ``url`` refers to the same server and same protocol
+    (http, https) as ``origin_host``.
+
+    This is overly simplistic,
+    """
+
+    # Fail safe in the case that the original host header was not specified
+    if not origin_host:
+        return False
+
+    # Don't allow headers to be fowarded from https -> http or vice versa
+    if is_ssl != bool(url.scheme == 'https'):
+        return False
+
+    url_host = url.netloc
+
+    if ':' not in url_host:
+        url_host += ':443' if is_ssl else ':80'
+
+    if ':' not in origin_host:
+        origin_host += ':443' if is_ssl else ':80'
+
+    return url_host == origin_host
+
+
+def _include_url(orig_url, headers, require_ssl, chase_redirect, http):
+    orig_url = orig_url.decode('ascii')
     url = urlsplit(orig_url)
     if require_ssl and url.scheme != 'https':
         raise IncludeError('SSL required, cannot include: %s' % (orig_url, ))
-    resp, content = http.request(orig_url)
+
+    if _forward_all_headers_allowed(headers.get('Host'), require_ssl, url):
+        forward_headers = forward_headers_same_origin
+    else:
+        forward_headers = forward_headers_all_servers
+
+    headers = dict((k, v)
+                    for k, v in headers.items()
+                    if k.lower() in forward_headers)
+
+    resp, content = http.request(orig_url, headers=dict(headers))
     if resp.status == 200:
         return content
     raise _HTTPError(orig_url, resp.status)
-
